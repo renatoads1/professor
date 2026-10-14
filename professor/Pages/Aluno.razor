@@ -1,16 +1,41 @@
 ﻿@page "/aluno"
 @using professor.Model
+@inject HttpClient Http
+@inject IConfiguration Configuration
 
 <Titulo Texto="Cadastro de alunos" />
 
 <div class="container mt-4">
-    <h1 class="mb-4">Cadastro de alunos</h1>
 
-    <EditForm Model="_alunoEmEdicao" OnValidSubmit="SalvarAluno" class="card card-body mb-4">
-        <DataAnnotationsValidator />
-        <ValidationSummary />
+    @if (_erro is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_erro</div>
+    }
+    @if (_mensagem is not null)
+    {
+        <div class="alert alert-success alert-dismissible d-flex justify-content-between align-items-center" role="status">
+            <span>@_mensagem</span>
+            <button type="button" class="btn-close ms-3" aria-label="Fechar" @onclick="FecharMensagem"></button>
+        </div>
+    }
 
-        <h2 class="h4">@(_idEmEdicao.HasValue ? "Editar aluno" : "Novo aluno")</h2>
+    <div class="accordion mb-4" id="acordeao-formulario-aluno">
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="cabecalho-formulario-aluno">
+                <button type="button"
+                        class="@(_formularioAberto ? "accordion-button" : "accordion-button collapsed")"
+                        aria-expanded="@_formularioAberto"
+                        aria-controls="conteudo-formulario-aluno"
+                        @onclick="AlternarFormulario">
+                    @(_idEmEdicao.HasValue ? "Editar aluno" : "Novo aluno")
+                </button>
+            </h2>
+            <div id="conteudo-formulario-aluno"
+                 class="@(_formularioAberto ? "accordion-collapse collapse show" : "accordion-collapse collapse")"
+                 aria-labelledby="cabecalho-formulario-aluno">
+                <EditForm Model="_alunoEmEdicao" OnValidSubmit="SalvarAlunoAsync" class="accordion-body">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
 
         <div class="row g-3">
             <div class="col-md-4">
@@ -28,10 +53,43 @@
                 <InputText id="telefone" type="tel" class="form-control" @bind-Value="_alunoEmEdicao.Telefone" />
                 <ValidationMessage For="@(() => _alunoEmEdicao.Telefone)" />
             </div>
+            <div class="col-md-4">
+                <label for="pais" class="form-label">País</label>
+                <InputText id="pais" class="form-control" @bind-Value="_alunoEmEdicao.Pais" />
+                <ValidationMessage For="@(() => _alunoEmEdicao.Pais)" />
+            </div>
+            <div class="col-md-4">
+                <label for="estado" class="form-label">Estado</label>
+                <InputText id="estado" class="form-control" @bind-Value="_alunoEmEdicao.Estado" />
+                <ValidationMessage For="@(() => _alunoEmEdicao.Estado)" />
+            </div>
+            <div class="col-md-4">
+                <label for="cidade" class="form-label">Cidade</label>
+                <InputText id="cidade" class="form-control" @bind-Value="_alunoEmEdicao.Cidade" />
+                <ValidationMessage For="@(() => _alunoEmEdicao.Cidade)" />
+            </div>
+            <div class="col-md-4">
+                <label for="lingua" class="form-label">Língua de interesse</label>
+                <InputText id="lingua" class="form-control" @bind-Value="_alunoEmEdicao.LinguaDeInteresse" />
+                <ValidationMessage For="@(() => _alunoEmEdicao.LinguaDeInteresse)" />
+            </div>
+            <div class="col-md-4 d-flex align-items-center">
+                <div class="form-check mt-3">
+                    <InputCheckbox id="estudando" class="form-check-input" @bind-Value="_alunoEmEdicao.Estudando" />
+                    <label for="estudando" class="form-check-label">Está estudando</label>
+                </div>
+            </div>
         </div>
 
         <div class="mt-3">
-            <button type="submit" class="btn btn-primary">
+            @if (!_idEmEdicao.HasValue)
+            {
+                <TurnstileCaptcha @ref="_turnstileCaptcha"
+                                  SiteKey="@TurnstileSiteKey"
+                                  Action="cadastro_aluno"
+                                  OnTokenChanged="AtualizarTokenAsync" />
+            }
+            <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && string.IsNullOrWhiteSpace(_turnstileToken)))">
                 @(_idEmEdicao.HasValue ? "Salvar alterações" : "Cadastrar aluno")
             </button>
             @if (_idEmEdicao.HasValue)
@@ -39,12 +97,88 @@
                 <button type="button" class="btn btn-secondary ms-2" @onclick="CancelarEdicao">Cancelar</button>
             }
         </div>
-    </EditForm>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+
+    <div class="accordion mb-4" id="acordeao-filtros-alunos">
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="cabecalho-filtros-alunos">
+                <button type="button"
+                        class="@(_filtrosAbertos ? "accordion-button" : "accordion-button collapsed")"
+                        aria-expanded="@_filtrosAbertos"
+                        aria-controls="conteudo-filtros-alunos"
+                        @onclick="AlternarFiltros">
+                    Filtros
+                </button>
+            </h2>
+            <div id="conteudo-filtros-alunos"
+                 class="@(_filtrosAbertos ? "accordion-collapse collapse show" : "accordion-collapse collapse")"
+                 aria-labelledby="cabecalho-filtros-alunos">
+                <div class="accordion-body">
+                    <div class="d-flex justify-content-end mb-3">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="LimparFiltros">Limpar filtros</button>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-id" class="form-label">ID</label>
+                            <input id="filtro-id" class="form-control" @bind="_filtroId" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-nome" class="form-label">Nome</label>
+                            <input id="filtro-nome" class="form-control" @bind="_filtroNome" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-email" class="form-label">E-mail</label>
+                            <input id="filtro-email" class="form-control" @bind="_filtroEmail" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-telefone" class="form-label">Telefone</label>
+                            <input id="filtro-telefone" class="form-control" @bind="_filtroTelefone" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-pais" class="form-label">País</label>
+                            <input id="filtro-pais" class="form-control" @bind="_filtroPais" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-estado" class="form-label">Estado</label>
+                            <input id="filtro-estado" class="form-control" @bind="_filtroEstado" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-cidade" class="form-label">Cidade</label>
+                            <input id="filtro-cidade" class="form-control" @bind="_filtroCidade" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-lingua" class="form-label">Língua de interesse</label>
+                            <input id="filtro-lingua" class="form-control" @bind="_filtroLingua" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-estudando" class="form-label">Estudando</label>
+                            <select id="filtro-estudando" class="form-select" @bind="_filtroEstudando" @bind:after="ReiniciarPaginacao">
+                                <option value="">Todos</option>
+                                <option value="true">Sim</option>
+                                <option value="false">Não</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <h2 class="h4">Alunos cadastrados</h2>
-    @if (_alunos.Count == 0)
+    @if (_carregando)
+    {
+        <p>Carregando alunos...</p>
+    }
+    else if (_alunos.Count == 0)
     {
         <p>Nenhum aluno cadastrado.</p>
+    }
+    else if (!AlunosFiltrados.Any())
+    {
+        <p>Nenhum aluno corresponde aos filtros.</p>
     }
     else
     {
@@ -52,19 +186,31 @@
             <table class="table table-striped table-hover">
                 <thead>
                     <tr>
+                        <th>ID</th>
                         <th>Nome</th>
                         <th>E-mail</th>
                         <th>Telefone</th>
+                        <th>País</th>
+                        <th>Estado</th>
+                        <th>Cidade</th>
+                        <th>Língua de interesse</th>
+                        <th>Estudando</th>
                         <th>Ações</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var aluno in _alunos)
+                    @foreach (var aluno in AlunosNaPagina)
                     {
                         <tr>
+                            <td>@aluno.Id</td>
                             <td>@aluno.Nome</td>
                             <td>@aluno.Email</td>
                             <td>@aluno.Telefone</td>
+                            <td>@aluno.Pais</td>
+                            <td>@aluno.Estado</td>
+                            <td>@aluno.Cidade</td>
+                            <td>@aluno.LinguaDeInteresse</td>
+                            <td>@(aluno.Estudando ? "Sim" : "Não")</td>
                             <td>
                                 <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarAluno(aluno)">
                                     Editar
@@ -75,45 +221,233 @@
                 </tbody>
             </table>
         </div>
+
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mt-3">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span>Exibindo @InicioExibicao–@FimExibicao de @TotalAlunosFiltrados alunos</span>
+                <label for="itens-por-pagina" class="ms-md-3">Por página</label>
+                <select id="itens-por-pagina" class="form-select form-select-sm w-auto" value="@_itensPorPagina" @onchange="AlterarTamanhoPagina">
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
+
+            <nav aria-label="Paginação dos alunos">
+                <ul class="pagination mb-0">
+                    <li class="page-item @(_paginaAtual == 1 ? "disabled" : null)">
+                        <button type="button" class="page-link" @onclick="PaginaAnterior" disabled="@(_paginaAtual == 1)">Anterior</button>
+                    </li>
+                    @for (var pagina = 1; pagina <= TotalPaginas; pagina++)
+                    {
+                        var numeroPagina = pagina;
+                        <li class="page-item @(numeroPagina == _paginaAtual ? "active" : null)">
+                            <button type="button" class="page-link" aria-current="@(numeroPagina == _paginaAtual ? "page" : null)" @onclick="() => IrParaPagina(numeroPagina)">@numeroPagina</button>
+                        </li>
+                    }
+                    <li class="page-item @(_paginaAtual == TotalPaginas ? "disabled" : null)">
+                        <button type="button" class="page-link" @onclick="ProximaPagina" disabled="@(_paginaAtual == TotalPaginas)">Próxima</button>
+                    </li>
+                </ul>
+            </nav>
+        </div>
     }
 </div>
 
 @code {
-    private readonly List<Alunos> _alunos = [];
+    private List<Alunos> _alunos = [];
     private Alunos _alunoEmEdicao = new();
     private int? _idEmEdicao;
-    private int _proximoId = 1;
+    private bool _carregando = true;
+    private bool _salvando;
+    private bool _formularioAberto;
+    private bool _filtrosAbertos;
+    private TurnstileCaptcha? _turnstileCaptcha;
+    private string _turnstileToken = string.Empty;
+    private int _paginaAtual = 1;
+    private int _itensPorPagina = 10;
+    private string? _erro;
+    private string? _mensagem;
+    private string _filtroId = string.Empty;
+    private string _filtroNome = string.Empty;
+    private string _filtroEmail = string.Empty;
+    private string _filtroTelefone = string.Empty;
+    private string _filtroPais = string.Empty;
+    private string _filtroEstado = string.Empty;
+    private string _filtroCidade = string.Empty;
+    private string _filtroLingua = string.Empty;
+    private string _filtroEstudando = string.Empty;
+    private string TurnstileSiteKey => Configuration["CloudflareTurnstile:SiteKey"] ?? string.Empty;
 
-    private void SalvarAluno()
+    private List<Alunos> AlunosFiltrados => _alunos.Where(aluno =>
+        Corresponde(aluno.Id.ToString(), _filtroId)
+        && Corresponde(aluno.Nome, _filtroNome)
+        && Corresponde(aluno.Email, _filtroEmail)
+        && Corresponde(aluno.Telefone, _filtroTelefone)
+        && Corresponde(aluno.Pais, _filtroPais)
+        && Corresponde(aluno.Estado, _filtroEstado)
+        && Corresponde(aluno.Cidade, _filtroCidade)
+        && Corresponde(aluno.LinguaDeInteresse, _filtroLingua)
+        && (_filtroEstudando switch
+        {
+            "true" => aluno.Estudando,
+            "false" => !aluno.Estudando,
+            _ => true
+        })).ToList();
+
+    private List<Alunos> AlunosNaPagina => AlunosFiltrados
+        .Skip((_paginaAtual - 1) * _itensPorPagina)
+        .Take(_itensPorPagina)
+        .ToList();
+
+    private int TotalAlunosFiltrados => AlunosFiltrados.Count;
+    private int TotalPaginas => Math.Max(1, (int)Math.Ceiling((double)TotalAlunosFiltrados / _itensPorPagina));
+    private int InicioExibicao => TotalAlunosFiltrados == 0 ? 0 : ((_paginaAtual - 1) * _itensPorPagina) + 1;
+    private int FimExibicao => Math.Min(_paginaAtual * _itensPorPagina, TotalAlunosFiltrados);
+
+    protected override Task OnInitializedAsync() => CarregarAlunosAsync();
+
+    private async Task CarregarAlunosAsync()
     {
-        if (_idEmEdicao.HasValue)
+        _carregando = true;
+        _erro = null;
+
+        try
         {
-            var indice = _alunos.FindIndex(aluno => aluno.Id == _idEmEdicao.Value);
-            if (indice >= 0)
-            {
-                _alunos[indice] = _alunoEmEdicao;
-            }
+            _alunos = await Http.GetFromJsonAsync<List<Alunos>>("api/Alunos") ?? [];
         }
-        else
+        catch (HttpRequestException)
         {
-            _alunoEmEdicao.Id = _proximoId++;
-            _alunos.Add(_alunoEmEdicao);
+            _erro = "Não foi possível carregar os alunos. Verifique se a API está em execução.";
+        }
+        finally
+        {
+            _carregando = false;
+        }
+    }
+
+    private async Task SalvarAlunoAsync()
+    {
+        _erro = null;
+        _mensagem = null;
+        var criandoAluno = !_idEmEdicao.HasValue;
+        if (criandoAluno && string.IsNullOrWhiteSpace(_turnstileToken))
+        {
+            _erro = "Conclua a validação CAPTCHA antes de cadastrar o aluno.";
+            return;
         }
 
-        CancelarEdicao();
+        _salvando = true;
+
+        try
+        {
+            using var resposta = _idEmEdicao.HasValue
+                ? await Http.PutAsJsonAsync($"api/Alunos/{_alunoEmEdicao.Id}", _alunoEmEdicao)
+                : await Http.PostAsJsonAsync("api/Alunos", new
+                {
+                    Aluno = _alunoEmEdicao,
+                    TurnstileToken = _turnstileToken
+                });
+
+            if (!resposta.IsSuccessStatusCode)
+            {
+                _erro = resposta.StatusCode == System.Net.HttpStatusCode.BadRequest
+                    ? "A validação CAPTCHA falhou ou expirou. Faça o desafio novamente."
+                    : $"A API retornou o status {(int)resposta.StatusCode} ao salvar o aluno.";
+                return;
+            }
+
+            _mensagem = _idEmEdicao.HasValue ? "Aluno atualizado com sucesso." : "Aluno cadastrado com sucesso.";
+            CancelarEdicao();
+            await CarregarAlunosAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível salvar o aluno. Verifique se a API está em execução.";
+        }
+        finally
+        {
+            if (criandoAluno && _turnstileCaptcha is not null)
+            {
+                try
+                {
+                    await _turnstileCaptcha.ResetAsync();
+                }
+                catch (JSException)
+                {
+                    _turnstileToken = string.Empty;
+                }
+            }
+
+            _salvando = false;
+        }
+    }
+
+    private Task AtualizarTokenAsync(string token)
+    {
+        _turnstileToken = token;
+        return Task.CompletedTask;
     }
 
     private void EditarAluno(Alunos aluno)
     {
+        _formularioAberto = true;
         _idEmEdicao = aluno.Id;
         _alunoEmEdicao = new Alunos
         {
             Id = aluno.Id,
             Nome = aluno.Nome,
             Email = aluno.Email,
-            Telefone = aluno.Telefone
+            Telefone = aluno.Telefone,
+            Pais = aluno.Pais,
+            Estado = aluno.Estado,
+            Cidade = aluno.Cidade,
+            LinguaDeInteresse = aluno.LinguaDeInteresse,
+            Estudando = aluno.Estudando
         };
     }
+
+    private void AlternarFormulario() => _formularioAberto = !_formularioAberto;
+
+    private void AlternarFiltros() => _filtrosAbertos = !_filtrosAbertos;
+
+    private void ReiniciarPaginacao() => _paginaAtual = 1;
+
+    private void AlterarTamanhoPagina(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var tamanho) && tamanho is 10 or 25 or 50)
+        {
+            _itensPorPagina = tamanho;
+        }
+
+        ReiniciarPaginacao();
+    }
+
+    private void PaginaAnterior() => IrParaPagina(_paginaAtual - 1);
+
+    private void ProximaPagina() => IrParaPagina(_paginaAtual + 1);
+
+    private void IrParaPagina(int pagina) => _paginaAtual = Math.Clamp(pagina, 1, TotalPaginas);
+
+    private static bool Corresponde(string valor, string filtro) =>
+        string.IsNullOrWhiteSpace(filtro)
+        || valor.Contains(filtro.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private void LimparFiltros()
+    {
+        _filtroId = string.Empty;
+        _filtroNome = string.Empty;
+        _filtroEmail = string.Empty;
+        _filtroTelefone = string.Empty;
+        _filtroPais = string.Empty;
+        _filtroEstado = string.Empty;
+        _filtroCidade = string.Empty;
+        _filtroLingua = string.Empty;
+        _filtroEstudando = string.Empty;
+        ReiniciarPaginacao();
+    }
+
+    private void FecharMensagem() => _mensagem = null;
 
     private void CancelarEdicao()
     {

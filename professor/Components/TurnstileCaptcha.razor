@@ -1,0 +1,89 @@
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div @ref="_container" class="turnstile-container"></div>
+@if (_erro is not null)
+{
+    <div class="alert alert-danger mt-2" role="alert">@_erro</div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public string SiteKey { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Action { get; set; } = "cadastro_aluno";
+
+    [Parameter]
+    public EventCallback<string> OnTokenChanged { get; set; }
+
+    private ElementReference _container;
+    private DotNetObjectReference<TurnstileCaptcha>? _dotNetReference;
+    private string? _widgetId;
+    private string? _erro;
+    private bool _inicializado;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _inicializado)
+        {
+            return;
+        }
+
+        _inicializado = true;
+        if (string.IsNullOrWhiteSpace(SiteKey))
+        {
+            _erro = "A chave pública do Cloudflare Turnstile não está configurada.";
+            await OnTokenChanged.InvokeAsync(string.Empty);
+            StateHasChanged();
+            return;
+        }
+
+        _dotNetReference = DotNetObjectReference.Create(this);
+        try
+        {
+            _widgetId = await JS.InvokeAsync<string>(
+                "turnstileInterop.render",
+                _container,
+                SiteKey,
+                Action,
+                _dotNetReference);
+        }
+        catch (JSException)
+        {
+            _erro = "Não foi possível carregar o CAPTCHA. Verifique a conexão e tente novamente.";
+            await OnTokenChanged.InvokeAsync(string.Empty);
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public Task ReceberTokenAsync(string? token) => OnTokenChanged.InvokeAsync(token ?? string.Empty);
+
+    public async Task ResetAsync()
+    {
+        if (_widgetId is not null)
+        {
+            await JS.InvokeVoidAsync("turnstileInterop.reset", _widgetId);
+        }
+
+        await OnTokenChanged.InvokeAsync(string.Empty);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_widgetId is not null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("turnstileInterop.remove", _widgetId);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        _dotNetReference?.Dispose();
+    }
+}
