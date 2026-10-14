@@ -212,7 +212,7 @@
                             <td>@aluno.LinguaDeInteresse</td>
                             <td>@(aluno.Estudando ? "Sim" : "Não")</td>
                             <td>
-                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarAluno(aluno)">
+                                <button type="button" class="btn btn-sm btn-outline-primary" disabled @onclick="() => EditarAluno(aluno)">
                                     Editar
                                 </button>
                             </td>

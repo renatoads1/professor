@@ -77,7 +77,7 @@ public sealed class AlunosController(AlunosDbContext dbContext, TurnstileVerifie
         alunoExistente.LinguaDeInteresse = aluno.LinguaDeInteresse;
         alunoExistente.Estudando = aluno.Estudando;
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        //await dbContext.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
 
