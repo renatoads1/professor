@@ -4,6 +4,7 @@ using APILinguagem.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using professor.Model;
+using Microsoft.Extensions.Hosting;
 
 namespace APILinguagem.Controllers;
 
@@ -11,7 +12,9 @@ namespace APILinguagem.Controllers;
 [Route("api/[controller]")]
 public sealed class ProfessoresController(
     AlunosDbContext dbContext,
-    TurnstileVerifier turnstileVerifier) : ControllerBase
+    TurnstileVerifier turnstileVerifier,
+    IConfiguration configuration,
+    IHostEnvironment environment) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<Professores>>> GetAllAsync(CancellationToken cancellationToken)
@@ -24,7 +27,7 @@ public sealed class ProfessoresController(
         return Ok(professores);
     }
 
-    [HttpGet("{id:int}")]
+    [HttpGet("{id:int}", Name = "GetProfessorById")]
     public async Task<ActionResult<Professores>> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
         var professor = await dbContext.Professores
@@ -39,15 +42,21 @@ public sealed class ProfessoresController(
         ProfessorCadastroRequest request,
         CancellationToken cancellationToken)
     {
-        var captchaValido = await turnstileVerifier.VerifyAsync(
-            request.TurnstileToken,
-            "cadastro_professor",
-            HttpContext.Connection.RemoteIpAddress?.ToString(),
-            cancellationToken);
+        var turnstileDesativadoParaDesenvolvimento = environment.IsDevelopment()
+            && configuration.GetValue<bool>("CloudflareTurnstile:DisableForLocalDevelopment");
 
-        if (!captchaValido)
+        if (!turnstileDesativadoParaDesenvolvimento)
         {
-            return BadRequest(new { message = "A validação CAPTCHA falhou. Tente novamente." });
+            var captchaValido = await turnstileVerifier.VerifyAsync(
+                request.TurnstileToken,
+                "cadastro_professor",
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                cancellationToken);
+
+            if (!captchaValido)
+            {
+                return BadRequest(new { message = "A validação CAPTCHA falhou. Tente novamente." });
+            }
         }
 
         var emailEmUso = await dbContext.Professores
@@ -62,7 +71,7 @@ public sealed class ProfessoresController(
         dbContext.Professores.Add(professor);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return CreatedAtAction(nameof(GetByIdAsync), new { id = professor.Id }, professor);
+        return CreatedAtRoute("GetProfessorById", new { id = professor.Id }, professor);
     }
 
     [HttpPut("{id:int}")]

@@ -76,7 +76,7 @@
                 </div>
             </div>
 
-            @if (!_idEmEdicao.HasValue)
+            @if (!_idEmEdicao.HasValue && !TurnstileDesativadoParaDesenvolvimento)
             {
                 <div class="mt-3">
                     <TurnstileCaptcha @ref="_turnstileCaptcha"
@@ -87,7 +87,7 @@
             }
 
             <div class="mt-3">
-                <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && string.IsNullOrWhiteSpace(_turnstileToken)))">
+                <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && !TurnstileDesativadoParaDesenvolvimento && string.IsNullOrWhiteSpace(_turnstileToken)))">
                     @(_idEmEdicao.HasValue ? "Salvar alterações" : "Cadastrar professor")
                 </button>
                 @if (_idEmEdicao.HasValue)
@@ -157,6 +157,8 @@
     private TurnstileCaptcha? _turnstileCaptcha;
 
     private string TurnstileSiteKey => Configuration["CloudflareTurnstile:SiteKey"] ?? string.Empty;
+    private bool TurnstileDesativadoParaDesenvolvimento =>
+        string.Equals(Configuration["CloudflareTurnstile:DisableForLocalDevelopment"], "true", StringComparison.OrdinalIgnoreCase);
 
     protected override Task OnInitializedAsync() => CarregarProfessoresAsync();
 
@@ -184,7 +186,7 @@
         _erro = null;
         _mensagem = null;
         var criandoProfessor = !_idEmEdicao.HasValue;
-        if (criandoProfessor && string.IsNullOrWhiteSpace(_turnstileToken))
+        if (criandoProfessor && !TurnstileDesativadoParaDesenvolvimento && string.IsNullOrWhiteSpace(_turnstileToken))
         {
             _erro = "Conclua a validação CAPTCHA antes de cadastrar o professor.";
             return;
