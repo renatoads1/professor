@@ -1,16 +1,18 @@
 ﻿@inherits LayoutComponentBase
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
+    <div class="sidebar @(menuRecolhido ? "sidebar-recolhida" : null)">
+        <NavMenu MenuRecolhido="menuRecolhido" MenuRecolhidoChanged="AtualizarEstadoMenu" />
     </div>
 
     <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
         <article class="content px-4">
             @Body
         </article>
     </main>
 </div>
+
+@code {
+    private bool menuRecolhido;
+
+    private void AtualizarEstadoMenu(bool recolhido) => menuRecolhido = recolhido;
+}

@@ -56,6 +56,31 @@ main {
         height: 100vh;
         position: sticky;
         top: 0;
+        transition: width 0.2s ease;
+    }
+
+    .sidebar.sidebar-recolhida {
+        width: 76px;
+    }
+
+    .sidebar.sidebar-recolhida ::deep .top-row {
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+    }
+
+    .sidebar.sidebar-recolhida ::deep .top-row .container-fluid {
+        justify-content: center;
+        padding: 0;
+    }
+
+    .sidebar.sidebar-recolhida ::deep .nav-item a {
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .sidebar.sidebar-recolhida ::deep .nav-item .bi {
+        margin-right: 0;
     }
 
     .top-row {

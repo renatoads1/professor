@@ -1,4 +1,382 @@
 ﻿@page "/"
-<h2>Este sistema é para alunos encontrar professores e professores encontrar alunos.</h2>
+@using AlunoModel = professor.Model.Alunos
+@using ProfessorModel = professor.Model.Professores
+@inject HttpClient Http
 
+<Titulo Texto="Buscar pessoas" />
 
+<div class="container mt-4">
+    <h1>Encontre alguém para estudar ou ensinar idiomas</h1>
+    <p>Escolha o tipo de perfil que deseja buscar e informe os filtros.</p>
+
+    <div class="mb-3">
+        <label for="tipo-busca" class="form-label">O que deseja buscar?</label>
+        <select id="tipo-busca" class="form-select" @bind="_tipoBusca" @bind:after="LimparResultado">
+            <option value="">Selecione</option>
+            <option value="professor">Professor</option>
+            <option value="aluno">Aluno</option>
+        </select>
+    </div>
+
+    @if (_erro is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_erro</div>
+    }
+
+    @if (_tipoBusca == "professor")
+    {
+        <div class="card card-body mb-4">
+            <h2 class="h4">Filtros de professores</h2>
+            <div class="row g-3">
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-id" class="form-label">ID</label>
+                    <input id="busca-prof-id" class="form-control" @bind="_profId" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-nome" class="form-label">Nome</label>
+                    <input id="busca-prof-nome" class="form-control" @bind="_profNome" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-email" class="form-label">E-mail</label>
+                    <input id="busca-prof-email" class="form-control" @bind="_profEmail" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-telefone" class="form-label">Telefone</label>
+                    <input id="busca-prof-telefone" class="form-control" @bind="_profTelefone" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-pais" class="form-label">País</label>
+                    <input id="busca-prof-pais" class="form-control" @bind="_profPais" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-estado" class="form-label">Estado</label>
+                    <input id="busca-prof-estado" class="form-control" @bind="_profEstado" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-cidade" class="form-label">Cidade</label>
+                    <input id="busca-prof-cidade" class="form-control" @bind="_profCidade" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-idioma" class="form-label">Idioma que ensina</label>
+                    <input id="busca-prof-idioma" class="form-control" @bind="_profIdioma" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-preco-min" class="form-label">Preço mínimo (R$)</label>
+                    <input id="busca-prof-preco-min" class="form-control" inputmode="decimal" @bind="_profPrecoMinTexto" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-preco-max" class="form-label">Preço máximo (R$)</label>
+                    <input id="busca-prof-preco-max" class="form-control" inputmode="decimal" @bind="_profPrecoMaxTexto" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-prof-status" class="form-label">Status</label>
+                    <select id="busca-prof-status" class="form-select" @bind="_profAtivo">
+                        <option value="">Todos</option>
+                        <option value="true">Ativo</option>
+                        <option value="false">Inativo</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label for="busca-prof-apresentacao" class="form-label">Apresentação</label>
+                    <input id="busca-prof-apresentacao" class="form-control" @bind="_profApresentacao" @bind:event="oninput" />
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-primary" type="button" disabled="@_buscando" @onclick="BuscarProfessoresAsync">
+                    @(_buscando ? "Buscando..." : "Buscar professor")
+                </button>
+                <button class="btn btn-outline-secondary ms-2" type="button" @onclick="LimparFiltrosProfessor">Limpar filtros</button>
+            </div>
+        </div>
+    }
+
+    @if (_tipoBusca == "aluno")
+    {
+        <div class="card card-body mb-4">
+            <h2 class="h4">Filtros de alunos</h2>
+            <div class="row g-3">
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-aluno-id" class="form-label">ID</label>
+                    <input id="busca-aluno-id" class="form-control" inputmode="numeric" @bind="_alunoId" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-aluno-nome" class="form-label">Nome</label>
+                    <input id="busca-aluno-nome" class="form-control" @bind="_alunoNome" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-aluno-email" class="form-label">E-mail</label>
+                    <input id="busca-aluno-email" class="form-control" @bind="_alunoEmail" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-aluno-telefone" class="form-label">Telefone</label>
+                    <input id="busca-aluno-telefone" class="form-control" @bind="_alunoTelefone" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-aluno-pais" class="form-label">País</label>
+                    <input id="busca-aluno-pais" class="form-control" @bind="_alunoPais" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-aluno-estado" class="form-label">Estado</label>
+                    <input id="busca-aluno-estado" class="form-control" @bind="_alunoEstado" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-aluno-cidade" class="form-label">Cidade</label>
+                    <input id="busca-aluno-cidade" class="form-control" @bind="_alunoCidade" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-aluno-idioma" class="form-label">Idioma de interesse</label>
+                    <input id="busca-aluno-idioma" class="form-control" @bind="_alunoIdioma" @bind:event="oninput" />
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label for="busca-aluno-estudando" class="form-label">Estudando atualmente</label>
+                    <select id="busca-aluno-estudando" class="form-select" @bind="_alunoEstudando">
+                        <option value="">Todos</option>
+                        <option value="true">Sim</option>
+                        <option value="false">Não</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-primary" type="button" disabled="@_buscando" @onclick="BuscarAlunosAsync">
+                    @(_buscando ? "Buscando..." : "Buscar aluno")
+                </button>
+                <button class="btn btn-outline-secondary ms-2" type="button" @onclick="LimparFiltrosAluno">Limpar filtros</button>
+            </div>
+        </div>
+    }
+
+    @if (_professorSelecionado is not null)
+    {
+        <div class="card card-body mb-4">
+            <h2 class="h4">Professor encontrado</h2>
+            <h3 class="h5">@_professorSelecionado.Nome</h3>
+            <p class="mb-1"><strong>Idioma:</strong> @_professorSelecionado.LinguaDeEnsino</p>
+            <p class="mb-1"><strong>Hora-aula:</strong> @_professorSelecionado.HoraAula.ToString("C", _culturaBrasileira)</p>
+            <p class="mb-1"><strong>Localização:</strong> @_professorSelecionado.Cidade, @_professorSelecionado.Estado, @_professorSelecionado.Pais</p>
+            @if (!string.IsNullOrWhiteSpace(_professorSelecionado.Apresentacao))
+            {
+                <p class="mb-1"><strong>Apresentação:</strong> @_professorSelecionado.Apresentacao</p>
+            }
+            <p class="mb-1"><strong>E-mail:</strong> @_professorSelecionado.Email</p>
+            <p class="mb-0"><strong>Telefone:</strong> @_professorSelecionado.Telefone</p>
+            @if (_fallbackAleatorio)
+            {
+                <div class="alert alert-info mt-3 mb-0">Nenhum professor correspondeu aos filtros. Este perfil foi escolhido aleatoriamente entre todos os professores.</div>
+            }
+        </div>
+    }
+
+    @if (_alunoSelecionado is not null)
+    {
+        <div class="card card-body mb-4">
+            <h2 class="h4">Aluno encontrado</h2>
+            <h3 class="h5">@_alunoSelecionado.Nome</h3>
+            <p class="mb-1"><strong>Idioma de interesse:</strong> @_alunoSelecionado.LinguaDeInteresse</p>
+            <p class="mb-1"><strong>Localização:</strong> @_alunoSelecionado.Cidade, @_alunoSelecionado.Estado, @_alunoSelecionado.Pais</p>
+            <p class="mb-1"><strong>Está estudando:</strong> @(_alunoSelecionado.Estudando ? "Sim" : "Não")</p>
+            <p class="mb-1"><strong>E-mail:</strong> @_alunoSelecionado.Email</p>
+            <p class="mb-0"><strong>Telefone:</strong> @_alunoSelecionado.Telefone</p>
+            @if (_fallbackAleatorio)
+            {
+                <div class="alert alert-info mt-3 mb-0">Nenhum aluno correspondeu aos filtros. Este perfil foi escolhido aleatoriamente entre todos os alunos.</div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _culturaBrasileira =
+        System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private readonly Random _random = new();
+    private string _tipoBusca = string.Empty;
+    private bool _buscando;
+    private bool _fallbackAleatorio;
+    private string? _erro;
+    private ProfessorModel? _professorSelecionado;
+    private AlunoModel? _alunoSelecionado;
+
+    private string _profId = string.Empty;
+    private string _profNome = string.Empty;
+    private string _profEmail = string.Empty;
+    private string _profTelefone = string.Empty;
+    private string _profPais = string.Empty;
+    private string _profEstado = string.Empty;
+    private string _profCidade = string.Empty;
+    private string _profIdioma = string.Empty;
+    private string _profApresentacao = string.Empty;
+    private string _profPrecoMinTexto = string.Empty;
+    private string _profPrecoMaxTexto = string.Empty;
+    private string _profAtivo = string.Empty;
+    private string _alunoId = string.Empty;
+    private string _alunoNome = string.Empty;
+    private string _alunoEmail = string.Empty;
+    private string _alunoTelefone = string.Empty;
+    private string _alunoPais = string.Empty;
+    private string _alunoEstado = string.Empty;
+    private string _alunoCidade = string.Empty;
+    private string _alunoIdioma = string.Empty;
+    private string _alunoEstudando = string.Empty;
+
+    private async Task BuscarProfessoresAsync()
+    {
+        _buscando = true;
+        _erro = null;
+        _professorSelecionado = null;
+        _alunoSelecionado = null;
+        _fallbackAleatorio = false;
+
+        try
+        {
+            var professores = await Http.GetFromJsonAsync<List<ProfessorModel>>("api/Professores") ?? [];
+            var filtrados = professores.Where(professor =>
+                Corresponde(professor.Id.ToString(), _profId)
+                && Corresponde(professor.Nome, _profNome)
+                && Corresponde(professor.Email, _profEmail)
+                && Corresponde(professor.Telefone, _profTelefone)
+                && Corresponde(professor.Pais, _profPais)
+                && Corresponde(professor.Estado, _profEstado)
+                && Corresponde(professor.Cidade, _profCidade)
+                && Corresponde(professor.LinguaDeEnsino, _profIdioma)
+                && Corresponde(professor.Apresentacao, _profApresentacao)
+                && (!TentarLerPreco(_profPrecoMinTexto, out var precoMin) || professor.HoraAula >= precoMin)
+                && (!TentarLerPreco(_profPrecoMaxTexto, out var precoMax) || professor.HoraAula <= precoMax)
+                && (_profAtivo switch
+                {
+                    "true" => professor.Ativo,
+                    "false" => !professor.Ativo,
+                    _ => true
+                })).ToList();
+
+            var candidatos = filtrados.Count > 0 ? filtrados : professores;
+            if (filtrados.Count == 0 && professores.Count > 0)
+            {
+                _fallbackAleatorio = true;
+            }
+
+            if (candidatos.Count > 0)
+            {
+                _professorSelecionado = candidatos[_random.Next(candidatos.Count)];
+            }
+            else
+            {
+                _erro = "Não há professores cadastrados para exibir.";
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível buscar professores. Verifique se a API está em execução.";
+        }
+        finally
+        {
+            _buscando = false;
+        }
+    }
+
+    private async Task BuscarAlunosAsync()
+    {
+        _buscando = true;
+        _erro = null;
+        _alunoSelecionado = null;
+        _professorSelecionado = null;
+        _fallbackAleatorio = false;
+
+        try
+        {
+            var alunos = await Http.GetFromJsonAsync<List<AlunoModel>>("api/Alunos") ?? [];
+            var filtrados = alunos.Where(aluno =>
+                Corresponde(aluno.Id.ToString(), _alunoId)
+                && Corresponde(aluno.Nome, _alunoNome)
+                && Corresponde(aluno.Email, _alunoEmail)
+                && Corresponde(aluno.Telefone, _alunoTelefone)
+                && Corresponde(aluno.Pais, _alunoPais)
+                && Corresponde(aluno.Estado, _alunoEstado)
+                && Corresponde(aluno.Cidade, _alunoCidade)
+                && Corresponde(aluno.LinguaDeInteresse, _alunoIdioma)
+                && (_alunoEstudando switch
+                {
+                    "true" => aluno.Estudando,
+                    "false" => !aluno.Estudando,
+                    _ => true
+                })).ToList();
+
+            var candidatos = filtrados.Count > 0 ? filtrados : alunos;
+            if (filtrados.Count == 0 && alunos.Count > 0)
+            {
+                _fallbackAleatorio = true;
+            }
+
+            if (candidatos.Count > 0)
+            {
+                _alunoSelecionado = candidatos[_random.Next(candidatos.Count)];
+            }
+            else
+            {
+                _erro = "Não há alunos cadastrados para exibir.";
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível buscar alunos. Verifique se a API está em execução.";
+        }
+        finally
+        {
+            _buscando = false;
+        }
+    }
+
+    private static bool Corresponde(string valor, string filtro) =>
+        string.IsNullOrWhiteSpace(filtro)
+        || valor.Contains(filtro.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static bool TentarLerPreco(string texto, out decimal preco)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+        {
+            preco = 0m;
+            return false;
+        }
+
+        return decimal.TryParse(texto, System.Globalization.NumberStyles.Currency, _culturaBrasileira, out preco)
+            || decimal.TryParse(texto, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out preco);
+    }
+
+    private void LimparFiltrosProfessor()
+    {
+        _profId = string.Empty;
+        _profNome = string.Empty;
+        _profEmail = string.Empty;
+        _profTelefone = string.Empty;
+        _profPais = string.Empty;
+        _profEstado = string.Empty;
+        _profCidade = string.Empty;
+        _profIdioma = string.Empty;
+        _profApresentacao = string.Empty;
+        _profPrecoMinTexto = string.Empty;
+        _profPrecoMaxTexto = string.Empty;
+        _profAtivo = string.Empty;
+        LimparResultado();
+    }
+
+    private void LimparFiltrosAluno()
+    {
+        _alunoId = string.Empty;
+        _alunoNome = string.Empty;
+        _alunoEmail = string.Empty;
+        _alunoTelefone = string.Empty;
+        _alunoPais = string.Empty;
+        _alunoEstado = string.Empty;
+        _alunoCidade = string.Empty;
+        _alunoIdioma = string.Empty;
+        _alunoEstudando = string.Empty;
+        LimparResultado();
+    }
+
+    private void LimparResultado()
+    {
+        _professorSelecionado = null;
+        _alunoSelecionado = null;
+        _fallbackAleatorio = false;
+        _erro = null;
+    }
+}

@@ -11,6 +11,21 @@
     font-size: 1.1rem;
 }
 
+.menu-collapse-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+}
+
+.menu-collapse-toggle .bi {
+    width: auto;
+    height: auto;
+    margin: 0;
+    top: 0;
+    background-image: none;
+}
+
 .bi {
     display: inline-block;
     position: relative;
@@ -19,6 +34,14 @@
     margin-right: 0.75rem;
     top: -1px;
     background-size: cover;
+}
+
+.nav-menu-icon {
+    flex: 0 0 1.25rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-right: 0.75rem;
+    fill: currentColor;
 }
 
 .bi-house-door-fill-nav-menu {
@@ -66,7 +89,7 @@
 }
 
 @media (min-width: 641px) {
-    .navbar-toggler {
+    .mobile-menu-toggle {
         display: none;
     }
 
@@ -79,5 +102,11 @@
         /* Allow sidebar to scroll for tall menus */
         height: calc(100vh - 3.5rem);
         overflow-y: auto;
+    }
+}
+
+@media (max-width: 640.98px) {
+    .menu-collapse-toggle {
+        display: none;
     }
 }
