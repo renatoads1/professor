@@ -2,7 +2,6 @@
 @using ProfessorModel = professor.Model.Professores
 @inject HttpClient Http
 @inject IConfiguration Configuration
-@inject IJSRuntime JS
 
 <Titulo Texto="Cadastro de professores" />
 
@@ -21,9 +20,21 @@
         </div>
     }
 
-    <div class="card card-body mb-4">
-        <h2 class="h4">@(_idEmEdicao.HasValue ? "Editar professor" : "Novo professor")</h2>
-        <EditForm Model="_professorEmEdicao" OnValidSubmit="SalvarProfessorAsync">
+    <div class="accordion mb-4" id="acordeao-formulario-professor">
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="cabecalho-formulario-professor">
+                <button type="button"
+                        class="@(_formularioAberto ? "accordion-button" : "accordion-button collapsed")"
+                        aria-expanded="@_formularioAberto"
+                        aria-controls="conteudo-formulario-professor"
+                        @onclick="AlternarFormulario">
+                    @(_idEmEdicao.HasValue ? "Editar professor" : "Novo professor")
+                </button>
+            </h2>
+            <div id="conteudo-formulario-professor"
+                 class="@(_formularioAberto ? "accordion-collapse collapse show" : "accordion-collapse collapse")"
+                 aria-labelledby="cabecalho-formulario-professor">
+                <EditForm Model="_professorEmEdicao" OnValidSubmit="SalvarProfessorAsync" class="accordion-body">
             <DataAnnotationsValidator />
             <ValidationSummary />
 
@@ -63,6 +74,15 @@
                     <InputText id="lingua-professor" class="form-control" @bind-Value="_professorEmEdicao.LinguaDeEnsino" />
                     <ValidationMessage For="@(() => _professorEmEdicao.LinguaDeEnsino)" />
                 </div>
+                <div class="col-md-4">
+                    <label for="hora-aula-professor" class="form-label">Valor da hora-aula</label>
+                    <div class="input-group">
+                        <span class="input-group-text">R$</span>
+                        <input id="hora-aula-professor" class="form-control" inputmode="decimal" placeholder="0,00"
+                               value="@_horaAulaTexto" @oninput="AtualizarHoraAula" @onblur="FormatarHoraAula" />
+                    </div>
+                    <ValidationMessage For="@(() => _professorEmEdicao.HoraAula)" />
+                </div>
                 <div class="col-md-8">
                     <label for="apresentacao-professor" class="form-label">Apresentação</label>
                     <InputTextArea id="apresentacao-professor" class="form-control" rows="3" @bind-Value="_professorEmEdicao.Apresentacao" />
@@ -74,6 +94,17 @@
                         <label for="ativo-professor" class="form-check-label">Perfil ativo</label>
                     </div>
                 </div>
+                @if (!_idEmEdicao.HasValue)
+                {
+                    <div class="col-12">
+                        <div class="form-check">
+                            <InputCheckbox id="termos-professor" class="form-check-input" @bind-Value="_professorEmEdicao.TermosAceitos" />
+                            <label for="termos-professor" class="form-check-label">Li e aceito os termos de uso e compartilhamento de dados.</label>
+                            <button type="button" class="btn btn-link btn-sm" @onclick="AbrirTermos">Ler termos</button>
+                            <ValidationMessage For="@(() => _professorEmEdicao.TermosAceitos)" />
+                        </div>
+                    </div>
+                }
             </div>
 
             @if (!_idEmEdicao.HasValue && !TurnstileDesativadoParaDesenvolvimento)
@@ -87,7 +118,7 @@
             }
 
             <div class="mt-3">
-                <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && !TurnstileDesativadoParaDesenvolvimento && string.IsNullOrWhiteSpace(_turnstileToken)))">
+                <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && (!_professorEmEdicao.TermosAceitos || (!TurnstileDesativadoParaDesenvolvimento && string.IsNullOrWhiteSpace(_turnstileToken)))))">
                     @(_idEmEdicao.HasValue ? "Salvar alterações" : "Cadastrar professor")
                 </button>
                 @if (_idEmEdicao.HasValue)
@@ -95,7 +126,117 @@
                     <button type="button" class="btn btn-secondary ms-2" @onclick="CancelarEdicao">Cancelar</button>
                 }
             </div>
-        </EditForm>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+
+    @if (_termosAbertos)
+    {
+        <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="termos-professor-titulo" style="background-color: rgba(0,0,0,.5);">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 class="modal-title fs-5" id="termos-professor-titulo">Termos de Uso e Consentimento de Compartilhamento de Dados</h2>
+                        <button type="button" class="btn-close" aria-label="Fechar" @onclick="FecharTermos"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Ao realizar seu cadastro neste sistema, você declara que leu, compreendeu e aceita integralmente estes termos.</p>
+                        <p>Você concorda que as informações fornecidas durante o processo de registro — incluindo, mas não se limitando a nome, e-mail, telefone, endereço e demais dados pessoais inseridos voluntariamente — poderão ser armazenadas, processadas e compartilhadas na internet conforme as finalidades do serviço.</p>
+                        <p>O compartilhamento dos dados poderá ocorrer para:</p>
+                        <ul>
+                            <li>Identificação e autenticação do usuário;</li>
+                            <li>Comunicação por e-mail, telefone ou outros meios digitais;</li>
+                            <li>Integração com serviços externos necessários ao funcionamento da plataforma;</li>
+                            <li>Cumprimento de obrigações legais ou regulatórias.</li>
+                        </ul>
+                        <p>Ao prosseguir com o cadastro, você autoriza expressamente o uso e a divulgação dessas informações dentro dos limites previstos nestes termos. Caso não concorde, não deverá concluir o registro ou utilizar o sistema.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="FecharTermos">Fechar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="accordion mb-4" id="acordeao-filtros-professores">
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="cabecalho-filtros-professores">
+                <button type="button"
+                        class="@(_filtrosAbertos ? "accordion-button" : "accordion-button collapsed")"
+                        aria-expanded="@_filtrosAbertos"
+                        aria-controls="conteudo-filtros-professores"
+                        @onclick="AlternarFiltros">
+                    Filtros de professores
+                </button>
+            </h2>
+            <div id="conteudo-filtros-professores"
+                 class="@(_filtrosAbertos ? "accordion-collapse collapse show" : "accordion-collapse collapse")"
+                 aria-labelledby="cabecalho-filtros-professores">
+                <div class="accordion-body">
+                    <div class="d-flex justify-content-end mb-3">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="LimparFiltros">Limpar filtros</button>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-id" class="form-label">ID</label>
+                            <input id="filtro-professor-id" class="form-control" inputmode="numeric" @bind="_filtroId" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-nome" class="form-label">Nome</label>
+                            <input id="filtro-professor-nome" class="form-control" @bind="_filtroNome" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-email" class="form-label">E-mail</label>
+                            <input id="filtro-professor-email" class="form-control" @bind="_filtroEmail" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-telefone" class="form-label">Telefone</label>
+                            <input id="filtro-professor-telefone" class="form-control" @bind="_filtroTelefone" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-pais" class="form-label">País</label>
+                            <input id="filtro-professor-pais" class="form-control" @bind="_filtroPais" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-estado" class="form-label">Estado</label>
+                            <input id="filtro-professor-estado" class="form-control" @bind="_filtroEstado" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-cidade" class="form-label">Cidade</label>
+                            <input id="filtro-professor-cidade" class="form-control" @bind="_filtroCidade" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-lingua" class="form-label">Idioma que ensina</label>
+                            <input id="filtro-professor-lingua" class="form-control" @bind="_filtroLingua" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-preco-minimo" class="form-label">Preço mínimo (R$)</label>
+                            <input id="filtro-professor-preco-minimo" class="form-control" inputmode="decimal" placeholder="0,00"
+                                   @bind="_filtroPrecoMinimoTexto" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-preco-maximo" class="form-label">Preço máximo (R$)</label>
+                            <input id="filtro-professor-preco-maximo" class="form-control" inputmode="decimal" placeholder="0,00"
+                                   @bind="_filtroPrecoMaximoTexto" @bind:event="oninput" />
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <label for="filtro-professor-ativo" class="form-label">Status</label>
+                            <select id="filtro-professor-ativo" class="form-select" @bind="_filtroAtivo">
+                                <option value="">Todos</option>
+                                <option value="true">Ativo</option>
+                                <option value="false">Inativo</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label for="filtro-professor-apresentacao" class="form-label">Apresentação</label>
+                            <input id="filtro-professor-apresentacao" class="form-control" @bind="_filtroApresentacao" @bind:event="oninput" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <h2 class="h4">Professores cadastrados</h2>
@@ -106,6 +247,10 @@
     else if (_professores.Count == 0)
     {
         <p>Nenhum professor cadastrado.</p>
+    }
+    else if (!ProfessoresFiltrados.Any())
+    {
+        <p>Nenhum professor corresponde aos filtros.</p>
     }
     else
     {
@@ -118,12 +263,12 @@
                         <th>Telefone</th>
                         <th>Localização</th>
                         <th>Idioma</th>
+                        <th>Hora-aula</th>
                         <th>Status</th>
-                        <th>Ações</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var professor in _professores)
+                    @foreach (var professor in ProfessoresFiltrados)
                     {
                         <tr>
                             <td>@professor.Nome</td>
@@ -131,11 +276,8 @@
                             <td>@professor.Telefone</td>
                             <td>@professor.Cidade, @professor.Estado, @professor.Pais</td>
                             <td>@professor.LinguaDeEnsino</td>
+                            <td>@professor.HoraAula.ToString("C", _culturaBrasileira)</td>
                             <td>@(professor.Ativo ? "Ativo" : "Inativo")</td>
-                            <td class="text-nowrap">
-                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarProfessor(professor)">Editar</button>
-                                <button type="button" class="btn btn-sm btn-outline-danger ms-1" disabled="@_excluindo" @onclick="() => ExcluirProfessorAsync(professor)">Excluir</button>
-                            </td>
                         </tr>
                     }
                 </tbody>
@@ -145,20 +287,75 @@
 </div>
 
 @code {
+    private static readonly System.Globalization.CultureInfo _culturaBrasileira =
+        System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
     private List<ProfessorModel> _professores = [];
     private ProfessorModel _professorEmEdicao = new();
+    private string _horaAulaTexto = string.Empty;
+    private bool _formularioAberto;
+    private bool _filtrosAbertos;
     private int? _idEmEdicao;
     private bool _carregando = true;
     private bool _salvando;
-    private bool _excluindo;
+    private bool _termosAbertos;
     private string _turnstileToken = string.Empty;
     private string? _erro;
     private string? _mensagem;
     private TurnstileCaptcha? _turnstileCaptcha;
+    private string _filtroNome = string.Empty;
+    private string _filtroId = string.Empty;
+    private string _filtroEmail = string.Empty;
+    private string _filtroTelefone = string.Empty;
+    private string _filtroPais = string.Empty;
+    private string _filtroEstado = string.Empty;
+    private string _filtroCidade = string.Empty;
+    private string _filtroLingua = string.Empty;
+    private string _filtroApresentacao = string.Empty;
+    private string _filtroPrecoMinimoTexto = string.Empty;
+    private string _filtroPrecoMaximoTexto = string.Empty;
+    private string _filtroAtivo = string.Empty;
+
+    private IEnumerable<ProfessorModel> ProfessoresFiltrados => _professores.Where(professor =>
+        Corresponde(professor.Id.ToString(), _filtroId)
+        && Corresponde(professor.Nome, _filtroNome)
+        && Corresponde(professor.Email, _filtroEmail)
+        && Corresponde(professor.Telefone, _filtroTelefone)
+        && Corresponde(professor.Pais, _filtroPais)
+        && Corresponde(professor.Estado, _filtroEstado)
+        && Corresponde(professor.Cidade, _filtroCidade)
+        && Corresponde(professor.LinguaDeEnsino, _filtroLingua)
+        && Corresponde(professor.Apresentacao, _filtroApresentacao)
+        && (!TentarLerPreco(_filtroPrecoMinimoTexto, out var precoMinimo) || professor.HoraAula >= precoMinimo)
+        && (!TentarLerPreco(_filtroPrecoMaximoTexto, out var precoMaximo) || professor.HoraAula <= precoMaximo)
+        && (_filtroAtivo switch
+        {
+            "true" => professor.Ativo,
+            "false" => !professor.Ativo,
+            _ => true
+        }));
 
     private string TurnstileSiteKey => Configuration["CloudflareTurnstile:SiteKey"] ?? string.Empty;
     private bool TurnstileDesativadoParaDesenvolvimento =>
         string.Equals(Configuration["CloudflareTurnstile:DisableForLocalDevelopment"], "true", StringComparison.OrdinalIgnoreCase);
+
+    private static bool Corresponde(string valor, string filtro) =>
+        string.IsNullOrWhiteSpace(filtro)
+        || valor.Contains(filtro.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static bool TentarLerPreco(string texto, out decimal preco)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+        {
+            preco = 0m;
+            return false;
+        }
+
+        return decimal.TryParse(texto, System.Globalization.NumberStyles.Currency,
+                   _culturaBrasileira, out preco)
+            || decimal.TryParse(texto, System.Globalization.NumberStyles.Number,
+                   System.Globalization.CultureInfo.InvariantCulture, out preco);
+    }
 
     protected override Task OnInitializedAsync() => CarregarProfessoresAsync();
 
@@ -186,6 +383,12 @@
         _erro = null;
         _mensagem = null;
         var criandoProfessor = !_idEmEdicao.HasValue;
+        if (criandoProfessor && !_professorEmEdicao.TermosAceitos)
+        {
+            _erro = "É necessário aceitar os termos para cadastrar o professor.";
+            return;
+        }
+
         if (criandoProfessor && !TurnstileDesativadoParaDesenvolvimento && string.IsNullOrWhiteSpace(_turnstileToken))
         {
             _erro = "Conclua a validação CAPTCHA antes de cadastrar o professor.";
@@ -216,6 +419,7 @@
 
             _mensagem = criandoProfessor ? "Professor cadastrado com sucesso." : "Professor atualizado com sucesso.";
             CancelarEdicao();
+            _formularioAberto = false;
             await CarregarProfessoresAsync();
         }
         catch (HttpRequestException)
@@ -255,42 +459,38 @@
             Estado = professor.Estado,
             Cidade = professor.Cidade,
             LinguaDeEnsino = professor.LinguaDeEnsino,
+            HoraAula = professor.HoraAula,
             Apresentacao = professor.Apresentacao,
             Ativo = professor.Ativo
         };
+        _horaAulaTexto = professor.HoraAula.ToString("N2", _culturaBrasileira);
     }
 
-    private async Task ExcluirProfessorAsync(ProfessorModel professor)
+    private void AtualizarHoraAula(ChangeEventArgs args)
     {
-        var confirmar = await JS.InvokeAsync<bool>("confirm", $"Deseja excluir o professor {professor.Nome}?");
-        if (!confirmar)
+        var digitos = new string((args.Value?.ToString() ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (digitos.Length > 8)
         {
-            return;
+            digitos = digitos[..8];
         }
 
-        _erro = null;
-        _mensagem = null;
-        _excluindo = true;
-        try
+        if (long.TryParse(digitos, out var centavos))
         {
-            using var resposta = await Http.DeleteAsync($"api/Professores/{professor.Id}");
-            if (!resposta.IsSuccessStatusCode)
-            {
-                _erro = $"A API retornou o status {(int)resposta.StatusCode} ao excluir o professor.";
-                return;
-            }
+            _professorEmEdicao.HoraAula = centavos / 100m;
+            _horaAulaTexto = _professorEmEdicao.HoraAula.ToString("N2", _culturaBrasileira);
+        }
+        else
+        {
+            _professorEmEdicao.HoraAula = 0m;
+            _horaAulaTexto = string.Empty;
+        }
+    }
 
-            _mensagem = "Professor excluído com sucesso.";
-            await CarregarProfessoresAsync();
-        }
-        catch (HttpRequestException)
-        {
-            _erro = "Não foi possível excluir o professor. Verifique se a API está em execução.";
-        }
-        finally
-        {
-            _excluindo = false;
-        }
+    private void FormatarHoraAula(FocusEventArgs args)
+    {
+        _horaAulaTexto = _professorEmEdicao.HoraAula > 0
+            ? _professorEmEdicao.HoraAula.ToString("N2", _culturaBrasileira)
+            : string.Empty;
     }
 
     private Task AtualizarTokenAsync(string token)
@@ -299,10 +499,35 @@
         return Task.CompletedTask;
     }
 
+    private void AbrirTermos() => _termosAbertos = true;
+
+    private void FecharTermos() => _termosAbertos = false;
+
+    private void AlternarFormulario() => _formularioAberto = !_formularioAberto;
+
+    private void AlternarFiltros() => _filtrosAbertos = !_filtrosAbertos;
+
+    private void LimparFiltros()
+    {
+        _filtroId = string.Empty;
+        _filtroNome = string.Empty;
+        _filtroEmail = string.Empty;
+        _filtroTelefone = string.Empty;
+        _filtroPais = string.Empty;
+        _filtroEstado = string.Empty;
+        _filtroCidade = string.Empty;
+        _filtroLingua = string.Empty;
+        _filtroApresentacao = string.Empty;
+        _filtroPrecoMinimoTexto = string.Empty;
+        _filtroPrecoMaximoTexto = string.Empty;
+        _filtroAtivo = string.Empty;
+    }
+
     private void CancelarEdicao()
     {
         _idEmEdicao = null;
         _professorEmEdicao = new ProfessorModel();
+        _horaAulaTexto = string.Empty;
     }
 
     private void FecharMensagem() => _mensagem = null;

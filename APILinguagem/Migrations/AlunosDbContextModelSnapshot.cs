@@ -60,6 +60,9 @@ namespace APILinguagem.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("TermosAceitos")
+                        .HasColumnType("boolean");
+
                     b.HasKey("Id");
 
                     b.ToTable("Alunos");
@@ -93,6 +96,10 @@ namespace APILinguagem.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<decimal>("HoraAula")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)");
+
                     b.Property<string>("LinguaDeEnsino")
                         .IsRequired()
                         .HasColumnType("text");
@@ -108,6 +115,9 @@ namespace APILinguagem.Migrations
                     b.Property<string>("Telefone")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<bool>("TermosAceitos")
+                        .HasColumnType("boolean");
 
                     b.HasKey("Id");
 

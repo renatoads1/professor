@@ -28,9 +28,14 @@ namespace professor.Model
         [Required(ErrorMessage = "Informe o idioma que ensina.")]
         public string LinguaDeEnsino { get; set; } = string.Empty;
 
+        [Range(0.01, 999999.99, ErrorMessage = "Informe um valor de hora-aula válido.")]
+        public decimal HoraAula { get; set; }
+
         [MaxLength(1000, ErrorMessage = "A apresentação deve ter até 1000 caracteres.")]
         public string Apresentacao { get; set; } = string.Empty;
 
         public bool Ativo { get; set; } = true;
+
+        public bool TermosAceitos { get; set; }
     }
 }

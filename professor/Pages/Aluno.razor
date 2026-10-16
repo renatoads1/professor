@@ -88,8 +88,15 @@
                                   SiteKey="@TurnstileSiteKey"
                                   Action="cadastro_aluno"
                                   OnTokenChanged="AtualizarTokenAsync" />
+
+                <div class="form-check mt-3">
+                    <InputCheckbox id="termos-aluno" class="form-check-input" @bind-Value="_alunoEmEdicao.TermosAceitos" />
+                    <label for="termos-aluno" class="form-check-label">Li e aceito os termos de uso e compartilhamento de dados.</label>
+                    <button type="button" class="btn btn-link btn-sm" @onclick="AbrirTermos">Ler termos</button>
+                    <ValidationMessage For="@(() => _alunoEmEdicao.TermosAceitos)" />
+                </div>
             }
-            <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && string.IsNullOrWhiteSpace(_turnstileToken)))">
+            <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && (string.IsNullOrWhiteSpace(_turnstileToken) || !_alunoEmEdicao.TermosAceitos)))">
                 @(_idEmEdicao.HasValue ? "Salvar alterações" : "Cadastrar aluno")
             </button>
             @if (_idEmEdicao.HasValue)
@@ -101,6 +108,35 @@
             </div>
         </div>
     </div>
+
+    @if (_termosAbertos)
+    {
+        <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="termos-aluno-titulo" style="background-color: rgba(0,0,0,.5);">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 class="modal-title fs-5" id="termos-aluno-titulo">Termos de Uso e Consentimento de Compartilhamento de Dados</h2>
+                        <button type="button" class="btn-close" aria-label="Fechar" @onclick="FecharTermos"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Ao realizar seu cadastro neste sistema, você declara que leu, compreendeu e aceita integralmente estes termos.</p>
+                        <p>Você concorda que as informações fornecidas durante o processo de registro — incluindo, mas não se limitando a nome, e-mail, telefone, endereço e demais dados pessoais inseridos voluntariamente — poderão ser armazenadas, processadas e compartilhadas na internet conforme as finalidades do serviço.</p>
+                        <p>O compartilhamento dos dados poderá ocorrer para:</p>
+                        <ul>
+                            <li>Identificação e autenticação do usuário;</li>
+                            <li>Comunicação por e-mail, telefone ou outros meios digitais;</li>
+                            <li>Integração com serviços externos necessários ao funcionamento da plataforma;</li>
+                            <li>Cumprimento de obrigações legais ou regulatórias.</li>
+                        </ul>
+                        <p>Ao prosseguir com o cadastro, você autoriza expressamente o uso e a divulgação dessas informações dentro dos limites previstos nestes termos. Caso não concorde, não deverá concluir o registro ou utilizar o sistema.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="FecharTermos">Fechar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 
     <div class="accordion mb-4" id="acordeao-filtros-alunos">
         <div class="accordion-item">
@@ -262,6 +298,7 @@
     private bool _salvando;
     private bool _formularioAberto;
     private bool _filtrosAbertos;
+    private bool _termosAbertos;
     private TurnstileCaptcha? _turnstileCaptcha;
     private string _turnstileToken = string.Empty;
     private int _paginaAtual = 1;
@@ -337,6 +374,12 @@
             return;
         }
 
+        if (criandoAluno && !_alunoEmEdicao.TermosAceitos)
+        {
+            _erro = "É necessário aceitar os termos para cadastrar o aluno.";
+            return;
+        }
+
         _salvando = true;
 
         try
@@ -388,6 +431,10 @@
         _turnstileToken = token;
         return Task.CompletedTask;
     }
+
+    private void AbrirTermos() => _termosAbertos = true;
+
+    private void FecharTermos() => _termosAbertos = false;
 
     private void EditarAluno(Alunos aluno)
     {

@@ -30,5 +30,7 @@ namespace professor.Model
 
         public bool Estudando { get; set; }
 
+        public bool TermosAceitos { get; set; }
+
     }
 }

@@ -29,5 +29,7 @@ namespace professor.Model
         public string LinguaDeInteresse { get; set; } = string.Empty;
 
         public bool Estudando { get; set; }
+
+        public bool TermosAceitos { get; set; }
     }
 }

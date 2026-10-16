@@ -16,6 +16,7 @@ public sealed class AlunosDbContext(DbContextOptions<AlunosDbContext> options) :
             entity.HasKey(professor => professor.Id);
             entity.HasIndex(professor => professor.Email).IsUnique();
             entity.Property(professor => professor.LinguaDeEnsino).IsRequired();
+            entity.Property(professor => professor.HoraAula).HasPrecision(8, 2);
             entity.Property(professor => professor.Apresentacao).HasMaxLength(1000);
         });
     }

@@ -42,6 +42,11 @@ public sealed class ProfessoresController(
         ProfessorCadastroRequest request,
         CancellationToken cancellationToken)
     {
+        if (!request.Professor.TermosAceitos)
+        {
+            return BadRequest(new { message = "É necessário aceitar os termos para cadastrar o professor." });
+        }
+
         var turnstileDesativadoParaDesenvolvimento = environment.IsDevelopment()
             && configuration.GetValue<bool>("CloudflareTurnstile:DisableForLocalDevelopment");
 
@@ -105,6 +110,7 @@ public sealed class ProfessoresController(
         professorExistente.Estado = professor.Estado;
         professorExistente.Cidade = professor.Cidade;
         professorExistente.LinguaDeEnsino = professor.LinguaDeEnsino;
+        professorExistente.HoraAula = professor.HoraAula;
         professorExistente.Apresentacao = professor.Apresentacao;
         professorExistente.Ativo = professor.Ativo;
 

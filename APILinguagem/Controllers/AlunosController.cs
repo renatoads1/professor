@@ -36,6 +36,11 @@ public sealed class AlunosController(AlunosDbContext dbContext, TurnstileVerifie
     [HttpPost]
     public async Task<ActionResult<Alunos>> CreateAsync(AlunoCadastroRequest request, CancellationToken cancellationToken)
     {
+        if (!request.Aluno.TermosAceitos)
+        {
+            return BadRequest(new { message = "É necessário aceitar os termos para cadastrar o aluno." });
+        }
+
         var captchaValido = await turnstileVerifier.VerifyAsync(
             request.TurnstileToken,
             "cadastro_aluno",
@@ -77,7 +82,7 @@ public sealed class AlunosController(AlunosDbContext dbContext, TurnstileVerifie
         alunoExistente.LinguaDeInteresse = aluno.LinguaDeInteresse;
         alunoExistente.Estudando = aluno.Estudando;
 
-        //await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
 
