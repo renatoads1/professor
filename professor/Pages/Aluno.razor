@@ -44,14 +44,20 @@
                 <ValidationMessage For="@(() => _alunoEmEdicao.Nome)" />
             </div>
             <div class="col-md-4">
-                <label for="email" class="form-label">E-mail</label>
+                <label for="email" class="form-label">E-mail (login)</label>
                 <InputText id="email" type="email" class="form-control" @bind-Value="_alunoEmEdicao.Email" />
                 <ValidationMessage For="@(() => _alunoEmEdicao.Email)" />
             </div>
+            @if (!_idEmEdicao.HasValue)
+            {
+                <div class="col-md-4">
+                    <label for="senha-aluno" class="form-label">Senha (mínimo 8 caracteres)</label>
+                    <InputText id="senha-aluno" type="password" class="form-control" autocomplete="new-password" @bind-Value="_senhaCadastro" />
+                </div>
+            }
             <div class="col-md-4">
                 <label for="telefone" class="form-label">Telefone</label>
-                <InputText id="telefone" type="tel" class="form-control" @bind-Value="_alunoEmEdicao.Telefone" />
-                <ValidationMessage For="@(() => _alunoEmEdicao.Telefone)" />
+                <input id="telefone" type="tel" class="form-control" data-phone-mask="br" @bind="_alunoEmEdicao.Telefone" @bind:event="oninput" />
             </div>
             <div class="col-md-4">
                 <label for="pais" class="form-label">País</label>
@@ -84,10 +90,7 @@
         <div class="mt-3">
             @if (!_idEmEdicao.HasValue)
             {
-                <TurnstileCaptcha @ref="_turnstileCaptcha"
-                                  SiteKey="@TurnstileSiteKey"
-                                  Action="cadastro_aluno"
-                                  OnTokenChanged="AtualizarTokenAsync" />
+                @* CAPTCHA temporariamente desativado no cadastro. *@
 
                 <div class="form-check mt-3">
                     <InputCheckbox id="termos-aluno" class="form-check-input" @bind-Value="_alunoEmEdicao.TermosAceitos" />
@@ -96,7 +99,7 @@
                     <ValidationMessage For="@(() => _alunoEmEdicao.TermosAceitos)" />
                 </div>
             }
-            <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && (string.IsNullOrWhiteSpace(_turnstileToken) || !_alunoEmEdicao.TermosAceitos)))">
+            <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && !_alunoEmEdicao.TermosAceitos))">
                 @(_idEmEdicao.HasValue ? "Salvar alterações" : "Cadastrar aluno")
             </button>
             @if (_idEmEdicao.HasValue)
@@ -163,7 +166,7 @@
                         </div>
                         <div class="col-sm-6 col-lg-3">
                             <label for="filtro-nome" class="form-label">Nome</label>
-                            <input id="filtro-nome" class="form-control" @bind="_filtroNome" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                            <input id="filtro-nome" class="form-control" @bind "_filtroNome" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
                         </div>
                         <div class="col-sm-6 col-lg-3">
                             <label for="filtro-email" class="form-label">E-mail</label>
@@ -171,7 +174,7 @@
                         </div>
                         <div class="col-sm-6 col-lg-3">
                             <label for="filtro-telefone" class="form-label">Telefone</label>
-                            <input id="filtro-telefone" class="form-control" @bind="_filtroTelefone" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
+                            <input id="filtro-telefone" class="form-control" data-phone-mask="br" @bind="_filtroTelefone" @bind:event="oninput" @bind:after="ReiniciarPaginacao" />
                         </div>
                         <div class="col-sm-6 col-lg-3">
                             <label for="filtro-pais" class="form-label">País</label>
@@ -231,7 +234,6 @@
                         <th>Cidade</th>
                         <th>Língua de interesse</th>
                         <th>Estudando</th>
-                        <th>Ações</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -247,11 +249,6 @@
                             <td>@aluno.Cidade</td>
                             <td>@aluno.LinguaDeInteresse</td>
                             <td>@(aluno.Estudando ? "Sim" : "Não")</td>
-                            <td>
-                                <button type="button" class="btn btn-sm btn-outline-primary" disabled @onclick="() => EditarAluno(aluno)">
-                                    Editar
-                                </button>
-                            </td>
                         </tr>
                     }
                 </tbody>
@@ -301,6 +298,7 @@
     private bool _termosAbertos;
     private TurnstileCaptcha? _turnstileCaptcha;
     private string _turnstileToken = string.Empty;
+    private string _senhaCadastro = string.Empty;
     private int _paginaAtual = 1;
     private int _itensPorPagina = 10;
     private string? _erro;
@@ -368,11 +366,6 @@
         _erro = null;
         _mensagem = null;
         var criandoAluno = !_idEmEdicao.HasValue;
-        if (criandoAluno && string.IsNullOrWhiteSpace(_turnstileToken))
-        {
-            _erro = "Conclua a validação CAPTCHA antes de cadastrar o aluno.";
-            return;
-        }
 
         if (criandoAluno && !_alunoEmEdicao.TermosAceitos)
         {
@@ -389,19 +382,12 @@
                 : await Http.PostAsJsonAsync("api/Alunos", new
                 {
                     Aluno = _alunoEmEdicao,
-                    TurnstileToken = _turnstileToken
+                    Senha = _senhaCadastro
                 });
-
-            if (!resposta.IsSuccessStatusCode)
-            {
-                _erro = resposta.StatusCode == System.Net.HttpStatusCode.BadRequest
-                    ? "A validação CAPTCHA falhou ou expirou. Faça o desafio novamente."
-                    : $"A API retornou o status {(int)resposta.StatusCode} ao salvar o aluno.";
-                return;
-            }
 
             _mensagem = _idEmEdicao.HasValue ? "Aluno atualizado com sucesso." : "Aluno cadastrado com sucesso.";
             CancelarEdicao();
+            _senhaCadastro = string.Empty;
             await CarregarAlunosAsync();
         }
         catch (HttpRequestException)
@@ -500,5 +486,6 @@
     {
         _idEmEdicao = null;
         _alunoEmEdicao = new Alunos();
+        _senhaCadastro = string.Empty;
     }
 }

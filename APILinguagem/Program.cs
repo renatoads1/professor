@@ -1,6 +1,9 @@
 using APILinguagem.Data;
 using APILinguagem.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +14,32 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 
 builder.Services.AddDbContext<AlunosDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddHttpClient<TurnstileVerifier>();
+builder.Services.AddScoped<ContaAcessoService>();
+var jwtSigningKey = builder.Configuration["Authentication:JwtSigningKey"];
+if (!string.IsNullOrWhiteSpace(jwtSigningKey) && Encoding.UTF8.GetByteCount(jwtSigningKey) >= 32)
+{
+    builder.Services
+        .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = builder.Configuration["Authentication:Issuer"] ?? "professor-api",
+                ValidateAudience = true,
+                ValidAudience = builder.Configuration["Authentication:Audience"] ?? "professor-client",
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromMinutes(1)
+            };
+        });
+}
+else
+{
+    throw new InvalidOperationException("Configure uma chave JWT com pelo menos 32 bytes em Authentication:JwtSigningKey usando User Secrets ou variável de ambiente.");
+}
+builder.Services.AddAuthorization();
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options => options.AddPolicy("BlazorClient", policy =>
     policy.WithOrigins(allowedOrigins)
@@ -44,6 +73,7 @@ app.UseHttpsRedirection();
 
 app.UseCors("BlazorClient");
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

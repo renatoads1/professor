@@ -21,6 +21,45 @@ namespace APILinguagem.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("APILinguagem.Models.ContaAcesso", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EmailNormalizado")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("PerfilId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SenhaHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TipoPerfil")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmailNormalizado")
+                        .IsUnique();
+
+                    b.ToTable("ContasAcesso", (string)null);
+                });
+
             modelBuilder.Entity("professor.Model.Alunos", b =>
                 {
                     b.Property<int>("Id")

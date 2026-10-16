@@ -1,4 +1,5 @@
 ﻿@inherits LayoutComponentBase
+@inject professor.Services.AuthTokenService AuthTokenService
 <div class="page">
     <div class="sidebar @(menuRecolhido ? "sidebar-recolhida" : null)">
         <NavMenu MenuRecolhido="menuRecolhido" MenuRecolhidoChanged="AtualizarEstadoMenu" />
@@ -13,6 +14,8 @@
 
 @code {
     private bool menuRecolhido;
+
+    protected override Task OnInitializedAsync() => AuthTokenService.RestoreAsync();
 
     private void AtualizarEstadoMenu(bool recolhido) => menuRecolhido = recolhido;
 }

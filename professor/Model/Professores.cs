@@ -13,7 +13,6 @@ namespace professor.Model
         [EmailAddress(ErrorMessage = "Informe um e-mail válido.")]
         public string Email { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Informe o telefone.")]
         public string Telefone { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Informe o país.")]

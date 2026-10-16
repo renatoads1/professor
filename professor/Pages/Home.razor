@@ -2,12 +2,29 @@
 @using AlunoModel = professor.Model.Alunos
 @using ProfessorModel = professor.Model.Professores
 @inject HttpClient Http
-
-<Titulo Texto="Buscar pessoas" />
+@inject professor.Services.AuthTokenService AuthTokens
 
 <div class="container mt-4">
+    @if (AuthTokens.IsAuthenticated)
+    {
+        <p class="h4 mb-3">Bem-vindo, @(AuthTokens.UserName ?? "usuário")!</p>
+    }
+
     <h1>Encontre alguém para estudar ou ensinar idiomas</h1>
     <p>Escolha o tipo de perfil que deseja buscar e informe os filtros.</p>
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        @if (AuthTokens.IsAuthenticated)
+        {
+            <button class="btn btn-primary" type="button" @onclick="AuthTokens.ClearAsync">Sair</button>
+        }
+        else
+        {
+            <NavLink class="btn btn-primary" href="login">Entrar</NavLink>
+        }
+        <NavLink class="btn btn-outline-primary" href="aluno">Cadastrar como aluno</NavLink>
+        <NavLink class="btn btn-outline-primary" href="professores">Cadastrar como professor</NavLink>
+    </div>
 
     <div class="mb-3">
         <label for="tipo-busca" class="form-label">O que deseja buscar?</label>
@@ -42,7 +59,7 @@
                 </div>
                 <div class="col-sm-6 col-lg-3">
                     <label for="busca-prof-telefone" class="form-label">Telefone</label>
-                    <input id="busca-prof-telefone" class="form-control" @bind="_profTelefone" @bind:event="oninput" />
+                    <input id="busca-prof-telefone" class="form-control" data-phone-mask="br" @bind="_profTelefone" @bind:event="oninput" />
                 </div>
                 <div class="col-sm-6 col-lg-3">
                     <label for="busca-prof-pais" class="form-label">País</label>
@@ -109,7 +126,7 @@
                 </div>
                 <div class="col-sm-6 col-lg-3">
                     <label for="busca-aluno-telefone" class="form-label">Telefone</label>
-                    <input id="busca-aluno-telefone" class="form-control" @bind="_alunoTelefone" @bind:event="oninput" />
+                    <input id="busca-aluno-telefone" class="form-control" data-phone-mask="br" @bind="_alunoTelefone" @bind:event="oninput" />
                 </div>
                 <div class="col-sm-6 col-lg-3">
                     <label for="busca-aluno-pais" class="form-label">País</label>

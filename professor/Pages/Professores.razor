@@ -6,7 +6,6 @@
 <Titulo Texto="Cadastro de professores" />
 
 <div class="container mt-4">
-    <h1 class="mb-4">Cadastro de professores</h1>
 
     @if (_erro is not null)
     {
@@ -45,14 +44,20 @@
                     <ValidationMessage For="@(() => _professorEmEdicao.Nome)" />
                 </div>
                 <div class="col-md-4">
-                    <label for="email-professor" class="form-label">E-mail</label>
+                    <label for="email-professor" class="form-label">E-mail (login)</label>
                     <InputText id="email-professor" type="email" class="form-control" @bind-Value="_professorEmEdicao.Email" />
                     <ValidationMessage For="@(() => _professorEmEdicao.Email)" />
                 </div>
+                @if (!_idEmEdicao.HasValue)
+                {
+                    <div class="col-md-4">
+                        <label for="senha-professor" class="form-label">Senha (mínimo 8 caracteres)</label>
+                        <InputText id="senha-professor" type="password" class="form-control" autocomplete="new-password" @bind-Value="_senhaCadastro" />
+                    </div>
+                }
                 <div class="col-md-4">
                     <label for="telefone-professor" class="form-label">Telefone</label>
-                    <InputText id="telefone-professor" type="tel" class="form-control" @bind-Value="_professorEmEdicao.Telefone" />
-                    <ValidationMessage For="@(() => _professorEmEdicao.Telefone)" />
+                    <input id="telefone-professor" type="tel" class="form-control" data-phone-mask="br" @bind="_professorEmEdicao.Telefone" @bind:event="oninput" />
                 </div>
                 <div class="col-md-4">
                     <label for="pais-professor" class="form-label">País</label>
@@ -107,18 +112,10 @@
                 }
             </div>
 
-            @if (!_idEmEdicao.HasValue && !TurnstileDesativadoParaDesenvolvimento)
-            {
-                <div class="mt-3">
-                    <TurnstileCaptcha @ref="_turnstileCaptcha"
-                                      SiteKey="@TurnstileSiteKey"
-                                      Action="cadastro_professor"
-                                      OnTokenChanged="AtualizarTokenAsync" />
-                </div>
-            }
+            @* CAPTCHA temporariamente desativado no cadastro. *@
 
             <div class="mt-3">
-                <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && (!_professorEmEdicao.TermosAceitos || (!TurnstileDesativadoParaDesenvolvimento && string.IsNullOrWhiteSpace(_turnstileToken)))))">
+                <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && (!_professorEmEdicao.TermosAceitos)))">
                     @(_idEmEdicao.HasValue ? "Salvar alterações" : "Cadastrar professor")
                 </button>
                 @if (_idEmEdicao.HasValue)
@@ -193,7 +190,7 @@
                         </div>
                         <div class="col-sm-6 col-lg-3">
                             <label for="filtro-professor-telefone" class="form-label">Telefone</label>
-                            <input id="filtro-professor-telefone" class="form-control" @bind="_filtroTelefone" @bind:event="oninput" />
+                            <input id="filtro-professor-telefone" class="form-control" data-phone-mask="br" @bind="_filtroTelefone" @bind:event="oninput" />
                         </div>
                         <div class="col-sm-6 col-lg-3">
                             <label for="filtro-professor-pais" class="form-label">País</label>
@@ -300,6 +297,7 @@
     private bool _salvando;
     private bool _termosAbertos;
     private string _turnstileToken = string.Empty;
+    private string _senhaCadastro = string.Empty;
     private string? _erro;
     private string? _mensagem;
     private TurnstileCaptcha? _turnstileCaptcha;
@@ -389,12 +387,6 @@
             return;
         }
 
-        if (criandoProfessor && !TurnstileDesativadoParaDesenvolvimento && string.IsNullOrWhiteSpace(_turnstileToken))
-        {
-            _erro = "Conclua a validação CAPTCHA antes de cadastrar o professor.";
-            return;
-        }
-
         _salvando = true;
         try
         {
@@ -402,6 +394,7 @@
                 ? await Http.PostAsJsonAsync("api/Professores", new
                 {
                     Professor = _professorEmEdicao,
+                    Senha = _senhaCadastro,
                     TurnstileToken = _turnstileToken
                 })
                 : await Http.PutAsJsonAsync($"api/Professores/{_professorEmEdicao.Id}", _professorEmEdicao);
@@ -419,6 +412,7 @@
 
             _mensagem = criandoProfessor ? "Professor cadastrado com sucesso." : "Professor atualizado com sucesso.";
             CancelarEdicao();
+            _senhaCadastro = string.Empty;
             _formularioAberto = false;
             await CarregarProfessoresAsync();
         }
@@ -528,6 +522,7 @@
         _idEmEdicao = null;
         _professorEmEdicao = new ProfessorModel();
         _horaAulaTexto = string.Empty;
+        _senhaCadastro = string.Empty;
     }
 
     private void FecharMensagem() => _mensagem = null;

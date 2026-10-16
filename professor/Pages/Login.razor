@@ -1,0 +1,110 @@
+@page "/login"
+@using System.ComponentModel.DataAnnotations
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject professor.Services.AuthTokenService AuthTokens
+
+<PageTitle>Entrar</PageTitle>
+
+<div class="container mt-4" style="max-width: 32rem;">
+    <h1>Entrar</h1>
+    <p>Use o e-mail informado no cadastro e sua senha.</p>
+
+    @if (_erro is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_erro</div>
+    }
+
+    <EditForm Model="_formulario" OnValidSubmit="EntrarAsync" FormName="login-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="mb-3">
+            <label for="login-email" class="form-label">E-mail (login)</label>
+            <InputText id="login-email" type="email" class="form-control" autocomplete="username" @bind-Value="_formulario.Email" />
+            <ValidationMessage For="@(() => _formulario.Email)" />
+        </div>
+        <div class="mb-3">
+            <label for="login-senha" class="form-label">Senha</label>
+            <InputText id="login-senha" type="password" class="form-control" autocomplete="current-password" @bind-Value="_formulario.Senha" />
+            <ValidationMessage For="@(() => _formulario.Senha)" />
+        </div>
+
+        <button type="submit" class="btn btn-primary" disabled="@_entrando">
+            @(_entrando ? "Entrando..." : "Entrar")
+        </button>
+        <div class="mt-3">
+            Ainda não tem cadastro?
+            <NavLink href="aluno">Cadastre-se como aluno</NavLink>
+            ou <NavLink href="professores">como professor</NavLink>.
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    private readonly LoginForm _formulario = new();
+    private string? _erro;
+    private bool _entrando;
+
+    private async Task EntrarAsync()
+    {
+        if (_entrando)
+        {
+            return;
+        }
+
+        _entrando = true;
+        _erro = null;
+
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/Autenticacao/login", new
+            {
+                Email = _formulario.Email,
+                Senha = _formulario.Senha
+            });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var erroApi = await response.Content.ReadFromJsonAsync<ApiError>();
+                _erro = erroApi?.Message ?? "Não foi possível entrar. Confira seus dados e tente novamente.";
+                return;
+            }
+
+            var resultado = await response.Content.ReadFromJsonAsync<LoginResponse>();
+            if (resultado is null || string.IsNullOrWhiteSpace(resultado.Token))
+            {
+                _erro = "O servidor não retornou um token de autenticação válido.";
+                return;
+            }
+
+            await AuthTokens.SetTokenAsync(resultado.Token, resultado.Nome);
+            Navigation.NavigateTo("/");
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API. Verifique se o servidor está em execução.";
+        }
+        catch (JSException)
+        {
+            _erro = "Não foi possível armazenar a sessão de autenticação neste navegador.";
+        }
+        finally
+        {
+            _entrando = false;
+        }
+    }
+
+    private sealed class LoginForm
+    {
+        [Required(ErrorMessage = "Informe o e-mail.")]
+        [EmailAddress(ErrorMessage = "Informe um e-mail válido.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Informe a senha.")]
+        public string Senha { get; set; } = string.Empty;
+    }
+
+    private sealed record LoginResponse(string Token, DateTimeOffset ExpiraEm, string Nome, string Email);
+    private sealed record ApiError(string? Message);
+}
