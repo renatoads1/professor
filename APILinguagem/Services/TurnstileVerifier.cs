@@ -1,13 +1,15 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Hosting;
 
 namespace APILinguagem.Services;
 
 public sealed class TurnstileVerifier(
     HttpClient httpClient,
     IConfiguration configuration,
-    ILogger<TurnstileVerifier> logger)
+    ILogger<TurnstileVerifier> logger,
+    IHostEnvironment environment)
 {
     private static readonly Uri VerifyUri = new("https://challenges.cloudflare.com/turnstile/v0/siteverify");
 
@@ -17,6 +19,15 @@ public sealed class TurnstileVerifier(
         string? remoteIp,
         CancellationToken cancellationToken)
     {
+        if (environment.IsDevelopment()
+            && string.Equals(
+                configuration["CloudflareTurnstile:DisableForLocalDevelopment"],
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         var secret = configuration["CloudflareTurnstile:SecretKey"];
         if (string.IsNullOrWhiteSpace(secret) || string.IsNullOrWhiteSpace(token))
         {

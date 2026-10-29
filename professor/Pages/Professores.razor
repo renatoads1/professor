@@ -112,10 +112,16 @@
                 }
             </div>
 
-            @* CAPTCHA temporariamente desativado no cadastro. *@
+            @if (!_idEmEdicao.HasValue && !TurnstileDesativadoParaDesenvolvimento)
+            {
+                <TurnstileCaptcha @ref="_turnstileCaptcha"
+                                  SiteKey="@TurnstileSiteKey"
+                                  Action="cadastro_professor"
+                                  OnTokenChanged="AtualizarTokenAsync" />
+            }
 
             <div class="mt-3">
-                <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && (!_professorEmEdicao.TermosAceitos)))">
+                <button type="submit" class="btn btn-primary" disabled="@(_salvando || (!_idEmEdicao.HasValue && (!_professorEmEdicao.TermosAceitos || (!TurnstileDesativadoParaDesenvolvimento && string.IsNullOrWhiteSpace(_turnstileToken)))))">
                     @(_idEmEdicao.HasValue ? "Salvar alterações" : "Cadastrar professor")
                 </button>
                 @if (_idEmEdicao.HasValue)

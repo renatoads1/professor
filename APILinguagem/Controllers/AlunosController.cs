@@ -12,7 +12,8 @@ namespace APILinguagem.Controllers;
 [Route("api/[controller]")]
 public sealed class AlunosController(
     AlunosDbContext dbContext,
-    ContaAcessoService contaAcessoService) : ControllerBase
+    ContaAcessoService contaAcessoService,
+    TurnstileVerifier turnstileVerifier) : ControllerBase
 {
     [HttpGet]
     [Authorize]
@@ -46,7 +47,14 @@ public sealed class AlunosController(
             return BadRequest(new { message = "É necessário aceitar os termos para cadastrar o aluno." });
         }
 
-        // CAPTCHA temporariamente desativado no cadastro de alunos.
+        if (!await turnstileVerifier.VerifyAsync(
+                request.TurnstileToken,
+                "cadastro_aluno",
+                null,
+                cancellationToken))
+        {
+            return BadRequest(new { message = "A validação CAPTCHA falhou ou expirou. Faça o desafio novamente." });
+        }
 
         var aluno = request.Aluno;
         var emailNormalizado = ContaAcessoService.NormalizarEmail(aluno.Email);
