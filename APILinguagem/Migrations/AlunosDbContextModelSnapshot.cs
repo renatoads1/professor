@@ -83,6 +83,12 @@ namespace APILinguagem.Migrations
                     b.Property<bool>("Estudando")
                         .HasColumnType("boolean");
 
+                    b.Property<byte[]>("FotoPerfil")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("FotoPerfilContentType")
+                        .HasColumnType("text");
+
                     b.Property<string>("LinguaDeInteresse")
                         .IsRequired()
                         .HasColumnType("text");
@@ -133,6 +139,12 @@ namespace APILinguagem.Migrations
 
                     b.Property<string>("Estado")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<byte[]>("FotoPerfil")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("FotoPerfilContentType")
                         .HasColumnType("text");
 
                     b.Property<decimal>("HoraAula")

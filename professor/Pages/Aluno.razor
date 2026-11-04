@@ -54,6 +54,16 @@
                     <label for="senha-aluno" class="form-label">Senha (mínimo 8 caracteres)</label>
                     <InputText id="senha-aluno" type="password" class="form-control" autocomplete="new-password" @bind-Value="_senhaCadastro" />
                 </div>
+                <div class="col-md-4">
+                    <label for="foto-perfil-aluno" class="form-label">Foto de perfil (JPEG, PNG ou WebP; até 2 MiB)</label>
+                    <InputFile id="foto-perfil-aluno" class="form-control" accept="image/jpeg,image/png,image/webp" OnChange="SelecionarFotoPerfilAsync" />
+                </div>
+                @if (_fotoPreviewUrl is not null)
+                {
+                    <div class="col-md-4">
+                        <img src="@_fotoPreviewUrl" alt="Prévia da foto de perfil" class="img-thumbnail" style="max-height: 180px; object-fit: cover;" />
+                    </div>
+                }
             }
             <div class="col-md-4">
                 <label for="telefone" class="form-label">Telefone</label>
@@ -147,6 +157,7 @@
         </div>
     }
 
+    <!--
     <div class="accordion mb-4" id="acordeao-filtros-alunos">
         <div class="accordion-item">
             <h2 class="accordion-header" id="cabecalho-filtros-alunos">
@@ -211,7 +222,9 @@
             </div>
         </div>
     </div>
+    -->
 
+    <!--
     <h2 class="h4">Alunos cadastrados</h2>
     @if (_carregando)
     {
@@ -291,6 +304,7 @@
             </nav>
         </div>
     }
+    -->
 </div>
 
 @code {
@@ -305,6 +319,10 @@
     private TurnstileCaptcha? _turnstileCaptcha;
     private string _turnstileToken = string.Empty;
     private string _senhaCadastro = string.Empty;
+    private const long MaxFotoPerfilBytes = 2 * 1024 * 1024;
+    private byte[]? _fotoPerfil;
+    private string? _fotoPerfilContentType;
+    private string? _fotoPreviewUrl;
     private int _paginaAtual = 1;
     private int _itensPorPagina = 10;
     private string? _erro;
@@ -348,26 +366,7 @@
     private int InicioExibicao => TotalAlunosFiltrados == 0 ? 0 : ((_paginaAtual - 1) * _itensPorPagina) + 1;
     private int FimExibicao => Math.Min(_paginaAtual * _itensPorPagina, TotalAlunosFiltrados);
 
-    protected override Task OnInitializedAsync() => CarregarAlunosAsync();
-
-    private async Task CarregarAlunosAsync()
-    {
-        _carregando = true;
-        _erro = null;
-
-        try
-        {
-            _alunos = await Http.GetFromJsonAsync<List<Alunos>>("api/Alunos") ?? [];
-        }
-        catch (HttpRequestException)
-        {
-            _erro = "Não foi possível carregar os alunos. Verifique se a API está em execução.";
-        }
-        finally
-        {
-            _carregando = false;
-        }
-    }
+    protected override Task OnInitializedAsync() => Task.CompletedTask;
 
     private async Task SalvarAlunoAsync()
     {
@@ -381,12 +380,6 @@
             return;
         }
 
-        if (criandoAluno && !TurnstileDesativadoParaDesenvolvimento && string.IsNullOrWhiteSpace(_turnstileToken))
-        {
-            _erro = "Conclua a verificação CAPTCHA antes de cadastrar o aluno.";
-            return;
-        }
-
         _salvando = true;
 
         try
@@ -397,24 +390,33 @@
                 {
                     Aluno = _alunoEmEdicao,
                     Senha = _senhaCadastro,
+                    FotoPerfil = _fotoPerfil,
+                    FotoPerfilContentType = _fotoPerfilContentType,
                     TurnstileToken = _turnstileToken
                 });
 
             if (!resposta.IsSuccessStatusCode)
             {
-                _erro = resposta.StatusCode switch
+                if (resposta.StatusCode == System.Net.HttpStatusCode.BadRequest)
                 {
-                    System.Net.HttpStatusCode.BadRequest => "A validação CAPTCHA falhou ou expirou. Faça o desafio novamente.",
-                    System.Net.HttpStatusCode.Conflict => "Já existe uma conta cadastrada com este e-mail.",
-                    _ => $"A API retornou o status {(int)resposta.StatusCode} ao salvar o aluno."
-                };
+                    var erroApi = await resposta.Content.ReadFromJsonAsync<ApiError>();
+                    _erro = erroApi?.Message ?? "Revise os dados do cadastro e tente novamente.";
+                }
+                else if (resposta.StatusCode == System.Net.HttpStatusCode.Conflict)
+                {
+                    _erro = "Já existe uma conta cadastrada com este e-mail.";
+                }
+                else
+                {
+                    _erro = $"A API retornou o status {(int)resposta.StatusCode} ao salvar o aluno.";
+                }
+
                 return;
             }
 
             _mensagem = _idEmEdicao.HasValue ? "Aluno atualizado com sucesso." : "Aluno cadastrado com sucesso.";
             CancelarEdicao();
             _senhaCadastro = string.Empty;
-            await CarregarAlunosAsync();
         }
         catch (HttpRequestException)
         {
@@ -442,6 +444,36 @@
     {
         _turnstileToken = token;
         return Task.CompletedTask;
+    }
+
+    private async Task SelecionarFotoPerfilAsync(InputFileChangeEventArgs args)
+    {
+        _erro = null;
+        _fotoPerfil = null;
+        _fotoPerfilContentType = null;
+        _fotoPreviewUrl = null;
+
+        var arquivo = args.File;
+        if (arquivo.Size is 0 or > MaxFotoPerfilBytes
+            || arquivo.ContentType is not ("image/jpeg" or "image/png" or "image/webp"))
+        {
+            _erro = "Selecione uma foto JPEG, PNG ou WebP de até 2 MiB.";
+            return;
+        }
+
+        try
+        {
+            await using var stream = arquivo.OpenReadStream(MaxFotoPerfilBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            _fotoPerfil = buffer.ToArray();
+            _fotoPerfilContentType = arquivo.ContentType;
+            _fotoPreviewUrl = $"data:{arquivo.ContentType};base64,{Convert.ToBase64String(_fotoPerfil)}";
+        }
+        catch (IOException)
+        {
+            _erro = "A foto não pode exceder 2 MiB.";
+        }
     }
 
     private void AbrirTermos() => _termosAbertos = true;
@@ -513,5 +545,10 @@
         _idEmEdicao = null;
         _alunoEmEdicao = new Alunos();
         _senhaCadastro = string.Empty;
+        _fotoPerfil = null;
+        _fotoPerfilContentType = null;
+        _fotoPreviewUrl = null;
     }
+
+    private sealed record ApiError(string? Message);
 }

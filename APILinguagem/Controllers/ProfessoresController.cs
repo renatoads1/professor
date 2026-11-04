@@ -12,8 +12,7 @@ namespace APILinguagem.Controllers;
 [Route("api/[controller]")]
 public sealed class ProfessoresController(
     AlunosDbContext dbContext,
-    ContaAcessoService contaAcessoService,
-    TurnstileVerifier turnstileVerifier) : ControllerBase
+    ContaAcessoService contaAcessoService) : ControllerBase
 {
     [HttpGet]
     [Authorize]
@@ -38,6 +37,24 @@ public sealed class ProfessoresController(
         return professor is null ? NotFound() : Ok(professor);
     }
 
+    [HttpGet("{id:int}/foto")]
+    [Authorize]
+    public async Task<IActionResult> GetFotoAsync(int id, CancellationToken cancellationToken)
+    {
+        var foto = await dbContext.Professores
+            .AsNoTracking()
+            .Where(professor => professor.Id == id)
+            .Select(professor => new { professor.FotoPerfil, professor.FotoPerfilContentType })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (foto?.FotoPerfil is null || string.IsNullOrWhiteSpace(foto.FotoPerfilContentType))
+        {
+            return NotFound();
+        }
+
+        return File(foto.FotoPerfil, foto.FotoPerfilContentType);
+    }
+
     [HttpPost]
     public async Task<ActionResult<Professores>> CreateAsync(
         ProfessorCadastroRequest request,
@@ -48,13 +65,9 @@ public sealed class ProfessoresController(
             return BadRequest(new { message = "É necessário aceitar os termos para cadastrar o professor." });
         }
 
-        if (!await turnstileVerifier.VerifyAsync(
-                request.TurnstileToken,
-                "cadastro_professor",
-                null,
-                cancellationToken))
+        if (!ProfilePhotoValidator.TryValidate(request.FotoPerfil, request.FotoPerfilContentType, out var fotoError))
         {
-            return BadRequest(new { message = "A validação CAPTCHA falhou ou expirou. Faça o desafio novamente." });
+            return BadRequest(new { message = fotoError });
         }
 
         var emailEmUso = await dbContext.Professores
@@ -69,6 +82,8 @@ public sealed class ProfessoresController(
         }
 
         var professor = request.Professor;
+        professor.FotoPerfil = request.FotoPerfil;
+        professor.FotoPerfilContentType = request.FotoPerfilContentType;
         professor.Id = 0;
         dbContext.Professores.Add(professor);
         await dbContext.SaveChangesAsync(cancellationToken);

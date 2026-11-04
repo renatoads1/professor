@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace professor.Model
 {
@@ -31,5 +32,11 @@ namespace professor.Model
         public bool Estudando { get; set; }
 
         public bool TermosAceitos { get; set; }
+
+        [JsonIgnore]
+        public byte[]? FotoPerfil { get; set; }
+
+        [JsonIgnore]
+        public string? FotoPerfilContentType { get; set; }
     }
 }

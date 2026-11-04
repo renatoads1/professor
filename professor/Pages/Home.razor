@@ -40,6 +40,14 @@
         <div class="alert alert-danger" role="alert">@_erro</div>
     }
 
+    @if (_aviso is not null)
+    {
+        <div class="alert alert-info" role="alert">
+            @_aviso
+            <NavLink class="alert-link" href="login">Entrar</NavLink>
+        </div>
+    }
+
     @if (_tipoBusca == "professor")
     {
         <div class="card card-body mb-4">
@@ -166,6 +174,10 @@
     {
         <div class="card card-body mb-4">
             <h2 class="h4">Professor encontrado</h2>
+            @if (_fotoPerfilSelecionada is not null)
+            {
+                <img src="@_fotoPerfilSelecionada" alt="Foto de @_professorSelecionado.Nome" class="img-thumbnail mb-3" style="max-width: 180px; max-height: 180px; object-fit: cover;" />
+            }
             <h3 class="h5">@_professorSelecionado.Nome</h3>
             <p class="mb-1"><strong>Idioma:</strong> @_professorSelecionado.LinguaDeEnsino</p>
             <p class="mb-1"><strong>Hora-aula:</strong> @_professorSelecionado.HoraAula.ToString("C", _culturaBrasileira)</p>
@@ -187,6 +199,10 @@
     {
         <div class="card card-body mb-4">
             <h2 class="h4">Aluno encontrado</h2>
+            @if (_fotoPerfilSelecionada is not null)
+            {
+                <img src="@_fotoPerfilSelecionada" alt="Foto de @_alunoSelecionado.Nome" class="img-thumbnail mb-3" style="max-width: 180px; max-height: 180px; object-fit: cover;" />
+            }
             <h3 class="h5">@_alunoSelecionado.Nome</h3>
             <p class="mb-1"><strong>Idioma de interesse:</strong> @_alunoSelecionado.LinguaDeInteresse</p>
             <p class="mb-1"><strong>Localização:</strong> @_alunoSelecionado.Cidade, @_alunoSelecionado.Estado, @_alunoSelecionado.Pais</p>
@@ -209,6 +225,8 @@
     private bool _buscando;
     private bool _fallbackAleatorio;
     private string? _erro;
+    private string? _aviso;
+    private string? _fotoPerfilSelecionada;
     private ProfessorModel? _professorSelecionado;
     private AlunoModel? _alunoSelecionado;
 
@@ -238,8 +256,10 @@
     {
         _buscando = true;
         _erro = null;
+        _aviso = null;
         _professorSelecionado = null;
         _alunoSelecionado = null;
+        _fotoPerfilSelecionada = null;
         _fallbackAleatorio = false;
 
         try
@@ -273,11 +293,19 @@
             if (candidatos.Count > 0)
             {
                 _professorSelecionado = candidatos[_random.Next(candidatos.Count)];
+                await CarregarFotoPerfilAsync($"api/Professores/{_professorSelecionado.Id}/foto");
             }
             else
             {
                 _erro = "Não há professores cadastrados para exibir.";
             }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _professorSelecionado = null;
+            _fotoPerfilSelecionada = null;
+            _aviso = "Você precisa estar conectado para pesquisar.";
+            _erro = null;
         }
         catch (HttpRequestException)
         {
@@ -293,8 +321,10 @@
     {
         _buscando = true;
         _erro = null;
+        _aviso = null;
         _alunoSelecionado = null;
         _professorSelecionado = null;
+        _fotoPerfilSelecionada = null;
         _fallbackAleatorio = false;
 
         try
@@ -325,11 +355,19 @@
             if (candidatos.Count > 0)
             {
                 _alunoSelecionado = candidatos[_random.Next(candidatos.Count)];
+                await CarregarFotoPerfilAsync($"api/Alunos/{_alunoSelecionado.Id}/foto");
             }
             else
             {
                 _erro = "Não há alunos cadastrados para exibir.";
             }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _alunoSelecionado = null;
+            _fotoPerfilSelecionada = null;
+            _aviso = "Você precisa estar conectado para pesquisar.";
+            _erro = null;
         }
         catch (HttpRequestException)
         {
@@ -339,6 +377,30 @@
         {
             _buscando = false;
         }
+    }
+
+    private async Task CarregarFotoPerfilAsync(string endpoint)
+    {
+        using var resposta = await Http.GetAsync(endpoint);
+        if (resposta.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return;
+        }
+
+        resposta.EnsureSuccessStatusCode();
+        var contentType = resposta.Content.Headers.ContentType?.MediaType;
+        if (contentType is not ("image/jpeg" or "image/png" or "image/webp"))
+        {
+            return;
+        }
+
+        var bytes = await resposta.Content.ReadAsByteArrayAsync();
+        if (bytes.Length is 0 or > 2 * 1024 * 1024)
+        {
+            return;
+        }
+
+        _fotoPerfilSelecionada = $"data:{contentType};base64,{Convert.ToBase64String(bytes)}";
     }
 
     private static bool Corresponde(string valor, string filtro) =>
@@ -395,5 +457,6 @@
         _alunoSelecionado = null;
         _fallbackAleatorio = false;
         _erro = null;
+        _aviso = null;
     }
 }

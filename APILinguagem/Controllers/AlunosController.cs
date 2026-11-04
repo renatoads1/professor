@@ -12,8 +12,7 @@ namespace APILinguagem.Controllers;
 [Route("api/[controller]")]
 public sealed class AlunosController(
     AlunosDbContext dbContext,
-    ContaAcessoService contaAcessoService,
-    TurnstileVerifier turnstileVerifier) : ControllerBase
+    ContaAcessoService contaAcessoService) : ControllerBase
 {
     [HttpGet]
     [Authorize]
@@ -39,6 +38,24 @@ public sealed class AlunosController(
         return aluno is null ? NotFound() : Ok(aluno);
     }
 
+    [HttpGet("{id:int}/foto")]
+    [Authorize]
+    public async Task<IActionResult> GetFotoAsync(int id, CancellationToken cancellationToken)
+    {
+        var foto = await dbContext.Alunos
+            .AsNoTracking()
+            .Where(aluno => aluno.Id == id)
+            .Select(aluno => new { aluno.FotoPerfil, aluno.FotoPerfilContentType })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (foto?.FotoPerfil is null || string.IsNullOrWhiteSpace(foto.FotoPerfilContentType))
+        {
+            return NotFound();
+        }
+
+        return File(foto.FotoPerfil, foto.FotoPerfilContentType);
+    }
+
     [HttpPost]
     public async Task<ActionResult<Alunos>> CreateAsync(AlunoCadastroRequest request, CancellationToken cancellationToken)
     {
@@ -47,16 +64,14 @@ public sealed class AlunosController(
             return BadRequest(new { message = "É necessário aceitar os termos para cadastrar o aluno." });
         }
 
-        if (!await turnstileVerifier.VerifyAsync(
-                request.TurnstileToken,
-                "cadastro_aluno",
-                null,
-                cancellationToken))
+        if (!ProfilePhotoValidator.TryValidate(request.FotoPerfil, request.FotoPerfilContentType, out var fotoError))
         {
-            return BadRequest(new { message = "A validação CAPTCHA falhou ou expirou. Faça o desafio novamente." });
+            return BadRequest(new { message = fotoError });
         }
 
         var aluno = request.Aluno;
+        aluno.FotoPerfil = request.FotoPerfil;
+        aluno.FotoPerfilContentType = request.FotoPerfilContentType;
         var emailNormalizado = ContaAcessoService.NormalizarEmail(aluno.Email);
         if (await dbContext.ContasAcesso.AnyAsync(conta => conta.EmailNormalizado == emailNormalizado, cancellationToken)
             || await dbContext.Professores.AnyAsync(professor => professor.Email.ToUpper() == emailNormalizado, cancellationToken))
