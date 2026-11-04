@@ -15,6 +15,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<AlunosDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddHttpClient<TurnstileVerifier>();
 builder.Services.AddScoped<ContaAcessoService>();
+builder.Services.AddScoped<PesquisaPontosService>();
 var jwtSigningKey = builder.Configuration["Authentication:JwtSigningKey"];
 if (!string.IsNullOrWhiteSpace(jwtSigningKey) && Encoding.UTF8.GetByteCount(jwtSigningKey) >= 32)
 {

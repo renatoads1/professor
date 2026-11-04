@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using professor.Model;
+using System.Security.Claims;
 
 namespace APILinguagem.Controllers;
 
@@ -12,18 +13,97 @@ namespace APILinguagem.Controllers;
 [Route("api/[controller]")]
 public sealed class AlunosController(
     AlunosDbContext dbContext,
-    ContaAcessoService contaAcessoService) : ControllerBase
+    ContaAcessoService contaAcessoService,
+    PesquisaPontosService pesquisaPontosService) : ControllerBase
 {
-    [HttpGet]
+    [HttpPost("pesquisar")]
     [Authorize]
-    public async Task<ActionResult<IReadOnlyList<Alunos>>> GetAllAsync(CancellationToken cancellationToken)
+    public async Task<ActionResult<PesquisaResponse<Alunos>>> PesquisarAsync(
+        PesquisaAlunosRequest request,
+        CancellationToken cancellationToken)
     {
-        var alunos = await dbContext.Alunos
-            .AsNoTracking()
-            .OrderBy(aluno => aluno.Id)
-            .ToListAsync(cancellationToken);
+        if (!int.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var contaAcessoId)
+            || request.ChaveIdempotencia == Guid.Empty)
+        {
+            return BadRequest(new { message = "A busca não possui uma identidade ou chave de idempotência válida." });
+        }
 
-        return Ok(alunos);
+        var chaveIdempotencia = request.ChaveIdempotencia.ToString("N");
+        var impressaoPesquisa = PesquisaPontosService.CriarImpressaoPesquisa(
+            request with { ChaveIdempotencia = Guid.Empty });
+
+        var cobranca = await pesquisaPontosService.ExecutarAsync<Alunos>(
+            contaAcessoId,
+            chaveIdempotencia,
+            impressaoPesquisa,
+            async token =>
+            {
+            var consulta = dbContext.Alunos.AsNoTracking().AsQueryable();
+            if (int.TryParse(request.Id, out var id))
+            {
+                consulta = consulta.Where(aluno => aluno.Id == id);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Id) && !int.TryParse(request.Id, out _))
+            {
+                consulta = consulta.Where(_ => false);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Nome))
+            {
+                consulta = consulta.Where(aluno => EF.Functions.ILike(aluno.Nome, $"%{request.Nome.Trim()}%"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Email))
+            {
+                consulta = consulta.Where(aluno => EF.Functions.ILike(aluno.Email, $"%{request.Email.Trim()}%"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Telefone))
+            {
+                consulta = consulta.Where(aluno => EF.Functions.ILike(aluno.Telefone, $"%{request.Telefone.Trim()}%"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Pais))
+            {
+                consulta = consulta.Where(aluno => EF.Functions.ILike(aluno.Pais, $"%{request.Pais.Trim()}%"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Estado))
+            {
+                consulta = consulta.Where(aluno => EF.Functions.ILike(aluno.Estado, $"%{request.Estado.Trim()}%"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Cidade))
+            {
+                consulta = consulta.Where(aluno => EF.Functions.ILike(aluno.Cidade, $"%{request.Cidade.Trim()}%"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.LinguaDeInteresse))
+            {
+                consulta = consulta.Where(aluno => EF.Functions.ILike(aluno.LinguaDeInteresse, $"%{request.LinguaDeInteresse.Trim()}%"));
+            }
+
+            if (request.Estudando.HasValue)
+            {
+                consulta = consulta.Where(aluno => aluno.Estudando == request.Estudando.Value);
+            }
+
+            return (IReadOnlyList<Alunos>)await consulta
+                .OrderBy(aluno => aluno.Id)
+                .ToListAsync(token);
+            }, cancellationToken);
+
+        return cobranca.Status switch
+        {
+            PesquisaTransacaoStatus.Concluida =>
+                Ok(new PesquisaResponse<Alunos>(cobranca.Resultados, cobranca.SaldoPontos)),
+            PesquisaTransacaoStatus.SaldoInsuficiente =>
+                StatusCode(StatusCodes.Status402PaymentRequired, new { message = "Saldo insuficiente para realizar a pesquisa.", cobranca.SaldoPontos }),
+            PesquisaTransacaoStatus.ContaInexistente => NotFound(),
+            PesquisaTransacaoStatus.ChaveReutilizada => Conflict(new { message = "A chave de idempotência já foi usada em outra pesquisa." }),
+            _ => BadRequest(new { message = "A chave de idempotência é inválida." })
+        };
     }
 
     [ActionName(nameof(GetByIdAsync))]

@@ -9,6 +9,7 @@ public sealed class AlunosDbContext(DbContextOptions<AlunosDbContext> options) :
     public DbSet<Alunos> Alunos => Set<Alunos>();
     public DbSet<Professores> Professores => Set<Professores>();
     public DbSet<ContaAcesso> ContasAcesso => Set<ContaAcesso>();
+    public DbSet<LancamentoPontos> LancamentosPontos => Set<LancamentoPontos>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,6 +34,21 @@ public sealed class AlunosDbContext(DbContextOptions<AlunosDbContext> options) :
             entity.Property(conta => conta.TipoPerfil).IsRequired();
             entity.Property(conta => conta.SenhaHash).IsRequired();
             entity.Property(conta => conta.SaldoPontos).HasDefaultValue(0);
+        });
+
+        modelBuilder.Entity<LancamentoPontos>(entity =>
+        {
+            entity.ToTable("LancamentosPontos", table =>
+                table.HasCheckConstraint("CK_LancamentosPontos_Quantidade_NaoZero", "\"Quantidade\" <> 0"));
+            entity.HasKey(lancamento => lancamento.Id);
+            entity.HasIndex(lancamento => new { lancamento.ContaAcessoId, lancamento.ChaveIdempotencia }).IsUnique();
+            entity.Property(lancamento => lancamento.Motivo).HasMaxLength(200).IsRequired();
+            entity.Property(lancamento => lancamento.ChaveIdempotencia).HasMaxLength(100).IsRequired();
+            entity.Property(lancamento => lancamento.DataLancamento).IsRequired();
+            entity.HasOne(lancamento => lancamento.ContaAcesso)
+                .WithMany()
+                .HasForeignKey(lancamento => lancamento.ContaAcessoId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

@@ -22,6 +22,40 @@
                 <span class="badge text-bg-secondary ms-2">Carregando saldo...</span>
             }
         </p>
+        @if (_saldoInsuficiente)
+        {
+            <div class="alert alert-warning" role="alert">
+                Saldo insuficiente. Esta pesquisa custa 1 ponto e não foi realizada. Adicione pontos à sua conta para pesquisar.
+            </div>
+        }
+
+        <section class="card card-body mb-4" aria-labelledby="historico-pontos-titulo">
+            <h2 id="historico-pontos-titulo" class="h5">Histórico de pontos</h2>
+            @if (_carregandoLancamentos)
+            {
+                <p class="mb-0">Carregando histórico...</p>
+            }
+            else if (_erroLancamentos is not null)
+            {
+                <p class="text-danger mb-0">@_erroLancamentos</p>
+            }
+            else if (_lancamentos.Count == 0)
+            {
+                <p class="mb-0">Ainda não há lançamentos de pontos.</p>
+            }
+            else
+            {
+                <ul class="list-group list-group-flush">
+                    @foreach (var lancamento in _lancamentos)
+                    {
+                        <li class="list-group-item d-flex justify-content-between gap-3 px-0">
+                            <span>@lancamento.Motivo</span>
+                            <span class="text-nowrap">@lancamento.Quantidade.ToString("+#;-#;0") pontos · @lancamento.DataLancamento.ToLocalTime().ToString("g")</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
     }
 
     <h1>Encontre alguém para estudar ou ensinar idiomas</h1>
@@ -202,10 +236,6 @@
             }
             <p class="mb-1"><strong>E-mail:</strong> @_professorSelecionado.Email</p>
             <p class="mb-0"><strong>Telefone:</strong> @_professorSelecionado.Telefone</p>
-            @if (_fallbackAleatorio)
-            {
-                <div class="alert alert-info mt-3 mb-0">Nenhum professor correspondeu aos filtros. Este perfil foi escolhido aleatoriamente entre todos os professores.</div>
-            }
         </div>
     }
 
@@ -223,10 +253,6 @@
             <p class="mb-1"><strong>Está estudando:</strong> @(_alunoSelecionado.Estudando ? "Sim" : "Não")</p>
             <p class="mb-1"><strong>E-mail:</strong> @_alunoSelecionado.Email</p>
             <p class="mb-0"><strong>Telefone:</strong> @_alunoSelecionado.Telefone</p>
-            @if (_fallbackAleatorio)
-            {
-                <div class="alert alert-info mt-3 mb-0">Nenhum aluno correspondeu aos filtros. Este perfil foi escolhido aleatoriamente entre todos os alunos.</div>
-            }
         </div>
     }
 </div>
@@ -237,11 +263,14 @@
     private readonly Random _random = new();
     private string _tipoBusca = string.Empty;
     private bool _buscando;
-    private bool _fallbackAleatorio;
     private string? _erro;
     private string? _aviso;
     private int? _saldoPontos;
     private string? _erroSaldo;
+    private bool _saldoInsuficiente;
+    private bool _carregandoLancamentos;
+    private string? _erroLancamentos;
+    private List<LancamentoPontosResponse> _lancamentos = [];
     private string? _fotoPerfilSelecionada;
     private ProfessorModel? _professorSelecionado;
     private AlunoModel? _alunoSelecionado;
@@ -279,6 +308,7 @@
         {
             var saldo = await Http.GetFromJsonAsync<SaldoResponse>("api/Conta/saldo");
             _saldoPontos = saldo?.SaldoPontos;
+            await CarregarLancamentosAsync();
         }
         catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
@@ -295,56 +325,49 @@
         _buscando = true;
         _erro = null;
         _aviso = null;
+        _saldoInsuficiente = false;
         _professorSelecionado = null;
         _alunoSelecionado = null;
         _fotoPerfilSelecionada = null;
-        _fallbackAleatorio = false;
 
         try
         {
-            var professores = await Http.GetFromJsonAsync<List<ProfessorModel>>("api/Professores") ?? [];
-            var filtrados = professores.Where(professor =>
-                Corresponde(professor.Id.ToString(), _profId)
-                && Corresponde(professor.Nome, _profNome)
-                && Corresponde(professor.Email, _profEmail)
-                && Corresponde(professor.Telefone, _profTelefone)
-                && Corresponde(professor.Pais, _profPais)
-                && Corresponde(professor.Estado, _profEstado)
-                && Corresponde(professor.Cidade, _profCidade)
-                && Corresponde(professor.LinguaDeEnsino, _profIdioma)
-                && Corresponde(professor.Apresentacao, _profApresentacao)
-                && (!TentarLerPreco(_profPrecoMinTexto, out var precoMin) || professor.HoraAula >= precoMin)
-                && (!TentarLerPreco(_profPrecoMaxTexto, out var precoMax) || professor.HoraAula <= precoMax)
-                && (_profAtivo switch
-                {
-                    "true" => professor.Ativo,
-                    "false" => !professor.Ativo,
-                    _ => true
-                })).ToList();
-
-            var candidatos = filtrados.Count > 0 ? filtrados : professores;
-            if (filtrados.Count == 0 && professores.Count > 0)
+            var request = new PesquisaProfessoresRequest(
+                Guid.NewGuid(), _profId, _profNome, _profEmail, _profTelefone, _profPais, _profEstado, _profCidade,
+                _profIdioma, _profApresentacao,
+                TentarLerPreco(_profPrecoMinTexto, out var precoMin) ? precoMin : null,
+                TentarLerPreco(_profPrecoMaxTexto, out var precoMax) ? precoMax : null,
+                _profAtivo switch { "true" => true, "false" => false, _ => null });
+            using var resposta = await Http.PostAsJsonAsync("api/Professores/pesquisar", request);
+            if (resposta.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                _fallbackAleatorio = true;
+                _aviso = "Você precisa estar conectado para pesquisar.";
+                return;
             }
 
-            if (candidatos.Count > 0)
+            if (resposta.StatusCode == System.Net.HttpStatusCode.PaymentRequired)
             {
-                _professorSelecionado = candidatos[_random.Next(candidatos.Count)];
+                var saldoInsuficiente = await resposta.Content.ReadFromJsonAsync<SaldoInsuficienteResponse>();
+                _saldoPontos = saldoInsuficiente?.SaldoPontos;
+                _saldoInsuficiente = true;
+                return;
+            }
+
+            resposta.EnsureSuccessStatusCode();
+            var resultado = await resposta.Content.ReadFromJsonAsync<PesquisaResponse<ProfessorModel>>()
+                ?? throw new InvalidOperationException("A API retornou uma resposta de pesquisa vazia.");
+            _saldoPontos = resultado.SaldoPontos;
+            await CarregarLancamentosAsync();
+
+            if (resultado.Resultados.Count > 0)
+            {
+                _professorSelecionado = resultado.Resultados[_random.Next(resultado.Resultados.Count)];
                 await CarregarFotoPerfilAsync($"api/Professores/{_professorSelecionado.Id}/foto");
             }
             else
             {
-                _erro = "Não há professores cadastrados para exibir.";
+                _erro = "Nenhum professor corresponde aos filtros informados. Nenhum ponto foi cobrado.";
             }
-
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-        {
-            _professorSelecionado = null;
-            _fotoPerfilSelecionada = null;
-            _aviso = "Você precisa estar conectado para pesquisar.";
-            _erro = null;
         }
         catch (HttpRequestException)
         {
@@ -361,52 +384,46 @@
         _buscando = true;
         _erro = null;
         _aviso = null;
+        _saldoInsuficiente = false;
         _alunoSelecionado = null;
         _professorSelecionado = null;
         _fotoPerfilSelecionada = null;
-        _fallbackAleatorio = false;
 
         try
         {
-            var alunos = await Http.GetFromJsonAsync<List<AlunoModel>>("api/Alunos") ?? [];
-            var filtrados = alunos.Where(aluno =>
-                Corresponde(aluno.Id.ToString(), _alunoId)
-                && Corresponde(aluno.Nome, _alunoNome)
-                && Corresponde(aluno.Email, _alunoEmail)
-                && Corresponde(aluno.Telefone, _alunoTelefone)
-                && Corresponde(aluno.Pais, _alunoPais)
-                && Corresponde(aluno.Estado, _alunoEstado)
-                && Corresponde(aluno.Cidade, _alunoCidade)
-                && Corresponde(aluno.LinguaDeInteresse, _alunoIdioma)
-                && (_alunoEstudando switch
-                {
-                    "true" => aluno.Estudando,
-                    "false" => !aluno.Estudando,
-                    _ => true
-                })).ToList();
-
-            var candidatos = filtrados.Count > 0 ? filtrados : alunos;
-            if (filtrados.Count == 0 && alunos.Count > 0)
+            var request = new PesquisaAlunosRequest(
+                Guid.NewGuid(), _alunoId, _alunoNome, _alunoEmail, _alunoTelefone, _alunoPais, _alunoEstado, _alunoCidade,
+                _alunoIdioma, _alunoEstudando switch { "true" => true, "false" => false, _ => null });
+            using var resposta = await Http.PostAsJsonAsync("api/Alunos/pesquisar", request);
+            if (resposta.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                _fallbackAleatorio = true;
+                _aviso = "Você precisa estar conectado para pesquisar.";
+                return;
             }
 
-            if (candidatos.Count > 0)
+            if (resposta.StatusCode == System.Net.HttpStatusCode.PaymentRequired)
             {
-                _alunoSelecionado = candidatos[_random.Next(candidatos.Count)];
+                var saldoInsuficiente = await resposta.Content.ReadFromJsonAsync<SaldoInsuficienteResponse>();
+                _saldoPontos = saldoInsuficiente?.SaldoPontos;
+                _saldoInsuficiente = true;
+                return;
+            }
+
+            resposta.EnsureSuccessStatusCode();
+            var resultado = await resposta.Content.ReadFromJsonAsync<PesquisaResponse<AlunoModel>>()
+                ?? throw new InvalidOperationException("A API retornou uma resposta de pesquisa vazia.");
+            _saldoPontos = resultado.SaldoPontos;
+            await CarregarLancamentosAsync();
+
+            if (resultado.Resultados.Count > 0)
+            {
+                _alunoSelecionado = resultado.Resultados[_random.Next(resultado.Resultados.Count)];
                 await CarregarFotoPerfilAsync($"api/Alunos/{_alunoSelecionado.Id}/foto");
             }
             else
             {
-                _erro = "Não há alunos cadastrados para exibir.";
+                _erro = "Nenhum aluno corresponde aos filtros informados. Nenhum ponto foi cobrado.";
             }
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-        {
-            _alunoSelecionado = null;
-            _fotoPerfilSelecionada = null;
-            _aviso = "Você precisa estar conectado para pesquisar.";
-            _erro = null;
         }
         catch (HttpRequestException)
         {
@@ -442,9 +459,24 @@
         _fotoPerfilSelecionada = $"data:{contentType};base64,{Convert.ToBase64String(bytes)}";
     }
 
-    private static bool Corresponde(string valor, string filtro) =>
-        string.IsNullOrWhiteSpace(filtro)
-        || valor.Contains(filtro.Trim(), StringComparison.OrdinalIgnoreCase);
+    private async Task CarregarLancamentosAsync()
+    {
+        _carregandoLancamentos = true;
+        _erroLancamentos = null;
+
+        try
+        {
+            _lancamentos = await Http.GetFromJsonAsync<List<LancamentoPontosResponse>>("api/Conta/lancamentos") ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            _erroLancamentos = "Não foi possível carregar o histórico de pontos.";
+        }
+        finally
+        {
+            _carregandoLancamentos = false;
+        }
+    }
 
     private static bool TentarLerPreco(string texto, out decimal preco)
     {
@@ -494,10 +526,37 @@
     {
         _professorSelecionado = null;
         _alunoSelecionado = null;
-        _fallbackAleatorio = false;
         _erro = null;
         _aviso = null;
     }
 
     private sealed record SaldoResponse(int SaldoPontos);
+    private sealed record LancamentoPontosResponse(long Id, int Quantidade, string Motivo, DateTimeOffset DataLancamento);
+    private sealed record PesquisaResponse<T>(IReadOnlyList<T> Resultados, int SaldoPontos);
+    private sealed record SaldoInsuficienteResponse(string Message, int SaldoPontos);
+    private sealed record PesquisaProfessoresRequest(
+        Guid ChaveIdempotencia,
+        string? Id,
+        string? Nome,
+        string? Email,
+        string? Telefone,
+        string? Pais,
+        string? Estado,
+        string? Cidade,
+        string? LinguaDeEnsino,
+        string? Apresentacao,
+        decimal? PrecoMinimo,
+        decimal? PrecoMaximo,
+        bool? Ativo);
+    private sealed record PesquisaAlunosRequest(
+        Guid ChaveIdempotencia,
+        string? Id,
+        string? Nome,
+        string? Email,
+        string? Telefone,
+        string? Pais,
+        string? Estado,
+        string? Cidade,
+        string? LinguaDeInteresse,
+        bool? Estudando);
 }
