@@ -9,4 +9,5 @@ public sealed class ContaAcesso
     public string TipoPerfil { get; set; } = string.Empty;
     public int PerfilId { get; set; }
     public string SenhaHash { get; set; } = string.Empty;
+    public int SaldoPontos { get; set; }
 }

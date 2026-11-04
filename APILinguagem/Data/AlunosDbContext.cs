@@ -32,6 +32,7 @@ public sealed class AlunosDbContext(DbContextOptions<AlunosDbContext> options) :
             entity.Property(conta => conta.Nome).IsRequired();
             entity.Property(conta => conta.TipoPerfil).IsRequired();
             entity.Property(conta => conta.SenhaHash).IsRequired();
+            entity.Property(conta => conta.SaldoPontos).HasDefaultValue(0);
         });
     }
 }

@@ -7,7 +7,21 @@
 <div class="container mt-4">
     @if (AuthTokens.IsAuthenticated)
     {
-        <p class="h4 mb-3">Bem-vindo, @(AuthTokens.UserName ?? "usuário")!</p>
+        <p class="h4 mb-3">
+            Bem-vindo, @(AuthTokens.UserName ?? "usuário")!
+            @if (_saldoPontos.HasValue)
+            {
+                <span class="badge text-bg-primary ms-2">Saldo: @_saldoPontos pontos</span>
+            }
+            else if (_erroSaldo is not null)
+            {
+                <span class="badge text-bg-secondary ms-2">Saldo indisponível</span>
+            }
+            else
+            {
+                <span class="badge text-bg-secondary ms-2">Carregando saldo...</span>
+            }
+        </p>
     }
 
     <h1>Encontre alguém para estudar ou ensinar idiomas</h1>
@@ -226,6 +240,8 @@
     private bool _fallbackAleatorio;
     private string? _erro;
     private string? _aviso;
+    private int? _saldoPontos;
+    private string? _erroSaldo;
     private string? _fotoPerfilSelecionada;
     private ProfessorModel? _professorSelecionado;
     private AlunoModel? _alunoSelecionado;
@@ -251,6 +267,28 @@
     private string _alunoCidade = string.Empty;
     private string _alunoIdioma = string.Empty;
     private string _alunoEstudando = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthTokens.IsAuthenticated)
+        {
+            return;
+        }
+
+        try
+        {
+            var saldo = await Http.GetFromJsonAsync<SaldoResponse>("api/Conta/saldo");
+            _saldoPontos = saldo?.SaldoPontos;
+        }
+        catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _erroSaldo = "Sessão expirada ao consultar o saldo.";
+        }
+        catch (HttpRequestException)
+        {
+            _erroSaldo = "Não foi possível consultar o saldo de pontos.";
+        }
+    }
 
     private async Task BuscarProfessoresAsync()
     {
@@ -299,6 +337,7 @@
             {
                 _erro = "Não há professores cadastrados para exibir.";
             }
+
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
@@ -459,4 +498,6 @@
         _erro = null;
         _aviso = null;
     }
+
+    private sealed record SaldoResponse(int SaldoPontos);
 }

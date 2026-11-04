@@ -44,6 +44,11 @@ namespace APILinguagem.Migrations
                     b.Property<int>("PerfilId")
                         .HasColumnType("integer");
 
+                    b.Property<int>("SaldoPontos")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("SenhaHash")
                         .IsRequired()
                         .HasColumnType("text");
