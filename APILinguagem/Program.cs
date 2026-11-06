@@ -1,4 +1,5 @@
 using APILinguagem.Data;
+using APILinguagem.Hubs;
 using APILinguagem.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,8 @@ builder.Services.AddDbContext<AlunosDbContext>(options => options.UseNpgsql(conn
 builder.Services.AddHttpClient<TurnstileVerifier>();
 builder.Services.AddScoped<ContaAcessoService>();
 builder.Services.AddScoped<PesquisaPontosService>();
+builder.Services.AddScoped<AgendaAulasService>();
+builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 128 * 1024);
 var jwtSigningKey = builder.Configuration["Authentication:JwtSigningKey"];
 if (!string.IsNullOrWhiteSpace(jwtSigningKey) && Encoding.UTF8.GetByteCount(jwtSigningKey) >= 32)
 {
@@ -23,6 +26,20 @@ if (!string.IsNullOrWhiteSpace(jwtSigningKey) && Encoding.UTF8.GetByteCount(jwtS
         .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         .AddJwtBearer(options =>
         {
+             options.Events = new JwtBearerEvents
+             {
+                 OnMessageReceived = context =>
+                 {
+                     var accessToken = context.Request.Query["access_token"];
+                     if (!string.IsNullOrEmpty(accessToken)
+                         && context.HttpContext.Request.Path.StartsWithSegments("/hubs/aulas"))
+                     {
+                         context.Token = accessToken;
+                     }
+
+                     return Task.CompletedTask;
+                 }
+             };
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuer = true,
@@ -77,10 +94,23 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseCors("BlazorClient");
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/hubs/aulas")
+        && context.WebSockets.IsWebSocketRequest
+        && !allowedOrigins.Contains(context.Request.Headers.Origin.ToString(), StringComparer.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+
+    await next();
+});
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<AulaHub>("/hubs/aulas");
 
 app.Run();

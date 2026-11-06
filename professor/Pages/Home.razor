@@ -236,6 +236,12 @@
             }
             <p class="mb-1"><strong>E-mail:</strong> @_professorSelecionado.Email</p>
             <p class="mb-0"><strong>Telefone:</strong> @_professorSelecionado.Telefone</p>
+            @if (AuthTokens.IsAuthenticated)
+            {
+                <NavLink class="btn btn-primary mt-3 align-self-start" href="@($"/agendar-aula/{_professorSelecionado.Id}")">
+                    Consultar horários e agendar
+                </NavLink>
+            }
         </div>
     }
 

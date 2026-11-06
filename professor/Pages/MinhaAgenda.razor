@@ -1,0 +1,571 @@
+@page "/minha-agenda"
+@implements IAsyncDisposable
+@using System.Globalization
+@using System.Text.Json
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject professor.Services.AuthTokenService AuthTokens
+
+<PageTitle>Minha agenda</PageTitle>
+
+<div class="container mt-4">
+    <h1>Minha agenda</h1>
+
+    @if (!AuthTokens.IsAuthenticated)
+    {
+        <div class="alert alert-warning" role="alert">
+            Entre na plataforma para configurar sua disponibilidade.
+            <NavLink class="alert-link" href="login">Entrar</NavLink>
+        </div>
+    }
+    else if (!AuthTokens.IsTeacher)
+    {
+        <div class="alert alert-info" role="status">A configuração de disponibilidade está disponível somente para professores.</div>
+    }
+    else
+    {
+        <p>Selecione vários dias e um intervalo em horas cheias para aplicar a mesma disponibilidade a todos eles. Cada aula dura uma hora. Ao salvar, a grade existente será substituída.</p>
+
+        @if (_erro is not null)
+        {
+            <div class="alert alert-danger" role="alert">@_erro</div>
+        }
+        @if (_mensagem is not null)
+        {
+            <div class="alert alert-success" role="status">@_mensagem</div>
+        }
+
+        <div class="mb-3">
+            <label for="fuso-horario" class="form-label">Fuso horário</label>
+            <InputText id="fuso-horario" class="form-control" @bind-Value="_fusoHorarioId" />
+        </div>
+
+        <fieldset class="mb-3">
+            <legend class="form-label">Dias da semana</legend>
+            <div class="d-flex flex-wrap gap-3">
+                @foreach (var dia in DiasSemana)
+                {
+                    <div class="form-check">
+                        <input id="dia-@((int)dia)" class="form-check-input" type="checkbox"
+                               checked="@_diasSelecionados.Contains(dia)" @onchange="args => AlternarDia(dia, args)" />
+                        <label class="form-check-label" for="dia-@((int)dia)">@NomeDia(dia)</label>
+                    </div>
+                }
+            </div>
+        </fieldset>
+
+        <div class="row g-3 align-items-end mb-3">
+            <div class="col-sm-6 col-md-3">
+                <label for="hora-inicio" class="form-label">Hora inicial</label>
+                <InputText id="hora-inicio" class="form-control" type="time" step="3600" @bind-Value="_horaInicio" />
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label for="hora-fim" class="form-label">Hora final</label>
+                <InputText id="hora-fim" class="form-control" type="time" step="3600" @bind-Value="_horaFim" />
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-outline-primary" @onclick="AdicionarFaixa">Adicionar intervalo</button>
+            </div>
+        </div>
+
+        @if (_faixas.Count > 0)
+        {
+            <h2 class="h5">Disponibilidade a salvar</h2>
+            <div class="table-responsive mb-3">
+                <table class="table align-middle">
+                    <thead>
+                        <tr><th>Dias</th><th>Intervalo</th><th>Ações</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var faixa in _faixas)
+                        {
+                            <tr>
+                                <td>@string.Join(", ", faixa.Dias.Select(NomeDia))</td>
+                                <td>@faixa.HoraInicio–@faixa.HoraFim</td>
+                                <td><button type="button" class="btn btn-outline-danger" @onclick="() => RemoverFaixa(faixa)">Remover</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-primary" @onclick="SalvarAsync">
+                @(_salvando ? "Salvando..." : "Salvar disponibilidade")
+            </button>
+            <button type="button" class="btn btn-outline-danger" @onclick="LimparDisponibilidadeAsync" disabled="@_salvando">
+                Limpar disponibilidade publicada
+            </button>
+        </div>
+
+        <section class="mt-5" aria-labelledby="agenda-professor-titulo">
+            <h2 id="agenda-professor-titulo">Agenda publicada</h2>
+            <p class="text-muted">Visualização da sua disponibilidade no fuso @(_fusoHorarioId).</p>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <button type="button" class="btn btn-outline-secondary" @onclick="() => AlterarPeriodoAsync(-1)" disabled="@_carregandoAgenda" aria-label="Período anterior">‹</button>
+                <strong aria-live="polite">@TituloPeriodo</strong>
+                <button type="button" class="btn btn-outline-secondary" @onclick="() => AlterarPeriodoAsync(1)" disabled="@_carregandoAgenda" aria-label="Próximo período">›</button>
+                <button type="button" class="btn btn-outline-secondary" @onclick="IrParaHojeAsync" disabled="@_carregandoAgenda">Hoje</button>
+                <div class="btn-group ms-sm-2" role="group" aria-label="Modo de visualização">
+                    <button type="button" class="btn @(_visualizacaoMensal ? "btn-outline-primary" : "btn-primary")" @onclick="() => DefinirVisualizacaoAsync(false)" disabled="@_carregandoAgenda">Semana</button>
+                    <button type="button" class="btn @(_visualizacaoMensal ? "btn-primary" : "btn-outline-primary")" @onclick="() => DefinirVisualizacaoAsync(true)" disabled="@_carregandoAgenda">Mês</button>
+                </div>
+            </div>
+
+            @if (_carregandoAgenda)
+            {
+                <p role="status">Carregando agenda...</p>
+            }
+            else if (_diasCalendario.Count > 0)
+            {
+                <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-4">
+                    @foreach (var dia in _diasCalendario)
+                    {
+                        var horariosDoDia = HorariosDoDia(dia);
+                        <div class="col">
+                            <section class="card h-100" aria-label="Agenda de @dia.ToDateTime(TimeOnly.MinValue).ToString("D", Cultura)">
+                                <div class="card-header d-flex justify-content-between align-items-center gap-2">
+                                    <h3 class="h6 mb-0">@dia.ToDateTime(TimeOnly.MinValue).ToString("dddd, d 'de' MMMM", Cultura)</h3>
+                                    <span class="badge @ClasseStatusDia(horariosDoDia)">@StatusDia(horariosDoDia)</span>
+                                </div>
+                                <div class="card-body">
+                                    @if (horariosDoDia.Count == 0)
+                                    {
+                                        <p class="text-muted mb-0">Sem disponibilidade publicada.</p>
+                                    }
+                                    else
+                                    {
+                                        <ul class="list-unstyled mb-0 d-grid gap-2">
+                                            @foreach (var horario in horariosDoDia)
+                                            {
+                                                <li class="border rounded p-2 d-flex justify-content-between gap-2">
+                                                    <span>@HoraLocal(horario.InicioUtc)–@HoraLocal(horario.FimUtc)</span>
+                                                    <span class="badge @(horario.Disponivel ? "text-bg-success" : "text-bg-secondary")">@(horario.Disponivel ? "Disponível" : "Reservado")</span>
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                </div>
+                            </section>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private const string ModuloAgendaPath = "./agendaInterop.js";
+    private static readonly DayOfWeek[] DiasSemana = Enum.GetValues<DayOfWeek>();
+    private static readonly string[] NomesDias = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+    private readonly List<FaixaFormulario> _faixas = [];
+    private readonly HashSet<DayOfWeek> _diasSelecionados = [];
+    private IJSObjectReference? _moduloAgenda;
+    private string _fusoHorarioId = string.Empty;
+    private string _horaInicio = "09:00";
+    private string _horaFim = "10:00";
+    private bool _salvando;
+    private bool _carregandoAgenda;
+    private bool _visualizacaoMensal;
+    private DateOnly _dataCalendario = DateOnly.FromDateTime(DateTime.Today);
+    private List<HorarioAgendaResponse> _agenda = [];
+    private List<DateOnly> _diasCalendario = [];
+    private string? _erro;
+    private string? _mensagem;
+
+    private static readonly CultureInfo Cultura = CultureInfo.GetCultureInfo("pt-BR");
+
+    private string TituloPeriodo => _visualizacaoMensal
+        ? _dataCalendario.ToDateTime(TimeOnly.MinValue).ToString("MMMM 'de' yyyy", Cultura)
+        : $"Semana de {InicioSemana.ToDateTime(TimeOnly.MinValue):dd/MM} a {InicioSemana.AddDays(6).ToDateTime(TimeOnly.MinValue):dd/MM/yyyy}";
+
+    private DateOnly InicioSemana => _dataCalendario.AddDays(-(int)_dataCalendario.DayOfWeek);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _moduloAgenda = await JS.InvokeAsync<IJSObjectReference>("import", ModuloAgendaPath);
+            _fusoHorarioId = await _moduloAgenda.InvokeAsync<string>("obterFusoHorarioId");
+        }
+        catch (JSException)
+        {
+            _erro = "Não foi possível detectar o fuso horário. Informe-o manualmente, por exemplo, America/Sao_Paulo.";
+        }
+
+        if (AuthTokens.IsTeacher)
+        {
+            await CarregarDisponibilidadeAsync();
+            await CarregarAgendaAsync();
+        }
+    }
+
+    private async Task CarregarDisponibilidadeAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync("api/agenda/minha-disponibilidade");
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroApiAsync(response);
+                return;
+            }
+
+            var disponibilidade = await response.Content.ReadFromJsonAsync<DisponibilidadeSemanalResponse>()
+                ?? throw new JsonException("A API retornou uma disponibilidade vazia.");
+            if (!string.IsNullOrWhiteSpace(disponibilidade.FusoHorarioId))
+            {
+                _fusoHorarioId = disponibilidade.FusoHorarioId;
+            }
+
+            _faixas.Clear();
+            _faixas.AddRange(disponibilidade.Faixas
+                .GroupBy(faixa => new { faixa.HoraInicio, faixa.HoraFim })
+                .Select(grupo => new FaixaFormulario(
+                    grupo.Select(faixa => faixa.DiaSemana).Order().ToArray(),
+                    grupo.Key.HoraInicio.ToString("HH:mm", CultureInfo.InvariantCulture),
+                    grupo.Key.HoraFim.ToString("HH:mm", CultureInfo.InvariantCulture))));
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível carregar sua disponibilidade salva.";
+        }
+        catch (JsonException)
+        {
+            _erro = "A resposta da disponibilidade não pôde ser lida.";
+        }
+    }
+
+    private void AdicionarFaixa()
+    {
+        _erro = null;
+        _mensagem = null;
+        if (_diasSelecionados.Count == 0)
+        {
+            _erro = "Selecione pelo menos um dia da semana.";
+            return;
+        }
+
+        if (!TentarLerIntervalo(out var horaInicio, out var horaFim))
+        {
+            _erro = "Informe uma hora inicial e final em horas cheias, com o final posterior ao início.";
+            return;
+        }
+
+        var quantidadeFaixasApi = _faixas.Sum(faixa => faixa.Dias.Count) + _diasSelecionados.Count;
+        if (quantidadeFaixasApi > 50)
+        {
+            _erro = "A agenda aceita no máximo 50 combinações de dia e intervalo.";
+            return;
+        }
+
+        _faixas.Add(new FaixaFormulario(
+            _diasSelecionados.Order().ToArray(),
+            horaInicio.ToString("HH:mm", CultureInfo.InvariantCulture),
+            horaFim.ToString("HH:mm", CultureInfo.InvariantCulture)));
+    }
+
+    private void RemoverFaixa(FaixaFormulario faixa)
+    {
+        _faixas.Remove(faixa);
+        _mensagem = null;
+    }
+
+    private void AlternarDia(DayOfWeek dia, ChangeEventArgs args)
+    {
+        if (args.Value is true)
+        {
+            _diasSelecionados.Add(dia);
+        }
+        else
+        {
+            _diasSelecionados.Remove(dia);
+        }
+    }
+
+    private async Task SalvarAsync()
+    {
+        _erro = null;
+        _mensagem = null;
+        if (_faixas.Count == 0)
+        {
+            _erro = "Adicione pelo menos um intervalo. Para remover a agenda publicada, use a ação de limpeza explícita.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_fusoHorarioId))
+        {
+            _erro = "Informe um fuso horário válido.";
+            return;
+        }
+
+        var quantidadeFaixasApi = _faixas.Sum(faixa => faixa.Dias.Count);
+        var faixas = new List<FaixaDisponibilidadeRequest>(quantidadeFaixasApi);
+        foreach (var faixa in _faixas)
+        {
+            if (!TimeOnly.TryParseExact(faixa.HoraInicio, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var horaInicio)
+                || !TimeOnly.TryParseExact(faixa.HoraFim, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var horaFim)
+                || horaFim <= horaInicio
+                || horaInicio.Minute != 0
+                || horaFim.Minute != 0)
+            {
+                _erro = "Informe horários em horas cheias e um horário final posterior ao inicial em todas as faixas.";
+                return;
+            }
+
+            faixas.AddRange(faixa.Dias.Select(dia => new FaixaDisponibilidadeRequest(dia, horaInicio, horaFim)));
+        }
+
+        _salvando = true;
+        try
+        {
+            var request = new AtualizarDisponibilidadeSemanalRequest(_fusoHorarioId.Trim(), faixas);
+            using var response = await Http.PutAsJsonAsync("api/agenda/disponibilidade-semanal", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroApiAsync(response);
+                return;
+            }
+
+            _mensagem = "Disponibilidade semanal salva com sucesso.";
+            await CarregarAgendaAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API para salvar sua disponibilidade.";
+        }
+        catch (JsonException)
+        {
+            _erro = "A resposta da API não pôde ser lida.";
+        }
+        finally
+        {
+            _salvando = false;
+        }
+    }
+
+    private async Task LimparDisponibilidadeAsync()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Remover toda a disponibilidade semanal publicada?"))
+        {
+            return;
+        }
+
+        _erro = null;
+        _mensagem = null;
+        _salvando = true;
+        try
+        {
+            using var response = await Http.DeleteAsync("api/agenda/disponibilidade-semanal");
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroApiAsync(response);
+                return;
+            }
+
+            _faixas.Clear();
+            _mensagem = "Disponibilidade semanal removida.";
+            await CarregarAgendaAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API para remover sua disponibilidade.";
+        }
+        finally
+        {
+            _salvando = false;
+        }
+    }
+
+    private async Task CarregarAgendaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_fusoHorarioId))
+        {
+            return;
+        }
+
+        _carregandoAgenda = true;
+        _agenda.Clear();
+        try
+        {
+            var primeiroDia = _visualizacaoMensal
+                ? new DateOnly(_dataCalendario.Year, _dataCalendario.Month, 1)
+                : InicioSemana;
+            var fimExclusivo = _visualizacaoMensal
+                ? primeiroDia.AddMonths(1)
+                : primeiroDia.AddDays(7);
+            var fuso = ObterFusoHorarioAgenda();
+            var inicioUtc = ConverterDataParaUtc(primeiroDia, fuso);
+            var fimUtc = ConverterDataParaUtc(fimExclusivo, fuso);
+            var horariosPorInicio = new Dictionary<DateTimeOffset, HorarioAgendaResponse>();
+
+            var inicioConsultaUtc = inicioUtc;
+            while (inicioConsultaUtc < fimUtc)
+            {
+                var fimConsultaUtc = inicioConsultaUtc.AddDays(30);
+                if (fimConsultaUtc > fimUtc)
+                {
+                    fimConsultaUtc = fimUtc;
+                }
+
+                var inicio = Uri.EscapeDataString(inicioConsultaUtc.ToString("O", CultureInfo.InvariantCulture));
+                var fim = Uri.EscapeDataString(fimConsultaUtc.ToString("O", CultureInfo.InvariantCulture));
+                using var response = await Http.GetAsync($"api/agenda/minha-agenda?inicioUtc={inicio}&fimUtc={fim}");
+                if (!response.IsSuccessStatusCode)
+                {
+                    _erro = await LerErroApiAsync(response);
+                    return;
+                }
+
+                var horarios = await response.Content.ReadFromJsonAsync<List<HorarioAgendaResponse>>() ?? [];
+                foreach (var horario in horarios)
+                {
+                    horariosPorInicio[horario.InicioUtc] = horario;
+                }
+
+                if (fimConsultaUtc == fimUtc)
+                {
+                    break;
+                }
+
+                inicioConsultaUtc = fimConsultaUtc.AddHours(-1);
+            }
+
+            _agenda = horariosPorInicio.Values.OrderBy(horario => horario.InicioUtc).ToList();
+            var quantidadeDias = _visualizacaoMensal
+                ? DateTime.DaysInMonth(primeiroDia.Year, primeiroDia.Month)
+                : 7;
+            _diasCalendario = Enumerable.Range(0, quantidadeDias)
+                .Select(indice => primeiroDia.AddDays(indice))
+                .ToList();
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API para consultar sua agenda.";
+        }
+        catch (JsonException)
+        {
+            _erro = "A resposta da API da agenda não pôde ser lida.";
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            _erro = "O fuso horário informado não é válido.";
+        }
+        catch (InvalidTimeZoneException)
+        {
+            _erro = "O fuso horário informado está inválido.";
+        }
+        finally
+        {
+            _carregandoAgenda = false;
+        }
+    }
+
+    private TimeZoneInfo ObterFusoHorarioAgenda() =>
+        TimeZoneInfo.FindSystemTimeZoneById(_fusoHorarioId);
+
+    private static DateTimeOffset ConverterDataParaUtc(DateOnly data, TimeZoneInfo fuso)
+    {
+        var dataHoraLocal = DateTime.SpecifyKind(data.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(dataHoraLocal, fuso), TimeSpan.Zero);
+    }
+
+    private string HoraLocal(DateTimeOffset horarioUtc) =>
+        TimeZoneInfo.ConvertTime(horarioUtc, ObterFusoHorarioAgenda()).ToString("HH:mm", Cultura);
+
+    private List<HorarioAgendaResponse> HorariosDoDia(DateOnly dia)
+    {
+        var fuso = ObterFusoHorarioAgenda();
+        return _agenda
+            .Where(horario => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(horario.InicioUtc, fuso).DateTime) == dia)
+            .OrderBy(horario => horario.InicioUtc)
+            .ToList();
+    }
+
+    private static string StatusDia(IReadOnlyCollection<HorarioAgendaResponse> horarios) =>
+        horarios.Count == 0
+            ? "Sem disponibilidade"
+            : horarios.All(horario => !horario.Disponivel)
+                ? "Ocupado"
+                : horarios.Any(horario => !horario.Disponivel)
+                    ? "Parcialmente ocupado"
+                    : "Disponível";
+
+    private static string ClasseStatusDia(IReadOnlyCollection<HorarioAgendaResponse> horarios) =>
+        horarios.Count == 0
+            ? "text-bg-light"
+            : horarios.All(horario => !horario.Disponivel)
+                ? "text-bg-secondary"
+                : horarios.Any(horario => !horario.Disponivel)
+                    ? "text-bg-warning"
+                    : "text-bg-success";
+
+    private async Task DefinirVisualizacaoAsync(bool mensal)
+    {
+        _visualizacaoMensal = mensal;
+        if (mensal)
+        {
+            _dataCalendario = new DateOnly(_dataCalendario.Year, _dataCalendario.Month, 1);
+        }
+
+        await CarregarAgendaAsync();
+    }
+
+    private async Task AlterarPeriodoAsync(int direcao)
+    {
+        _dataCalendario = _visualizacaoMensal
+            ? _dataCalendario.AddMonths(direcao)
+            : _dataCalendario.AddDays(direcao * 7);
+        await CarregarAgendaAsync();
+    }
+
+    private async Task IrParaHojeAsync()
+    {
+        _dataCalendario = DateOnly.FromDateTime(DateTime.Today);
+        await CarregarAgendaAsync();
+    }
+
+    private static async Task<string> LerErroApiAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var erro = await response.Content.ReadFromJsonAsync<ApiError>();
+            return erro?.Message ?? "Não foi possível salvar a disponibilidade. Verifique se seu perfil é de professor ativo.";
+        }
+        catch (JsonException)
+        {
+            return "Não foi possível salvar a disponibilidade. Verifique se seu perfil é de professor ativo.";
+        }
+    }
+
+    private static string NomeDia(DayOfWeek dia) => NomesDias[(int)dia];
+
+    private bool TentarLerIntervalo(out TimeOnly horaInicio, out TimeOnly horaFim)
+    {
+        var inicioValido = TimeOnly.TryParse(_horaInicio, CultureInfo.InvariantCulture, DateTimeStyles.None, out horaInicio);
+        var fimValido = TimeOnly.TryParse(_horaFim, CultureInfo.InvariantCulture, DateTimeStyles.None, out horaFim);
+        return inicioValido
+            && fimValido
+            && horaFim > horaInicio
+            && horaInicio.Ticks % TimeSpan.TicksPerHour == 0
+            && horaFim.Ticks % TimeSpan.TicksPerHour == 0;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_moduloAgenda is not null)
+        {
+            await _moduloAgenda.DisposeAsync();
+        }
+    }
+
+    private sealed record FaixaFormulario(IReadOnlyList<DayOfWeek> Dias, string HoraInicio, string HoraFim);
+
+    private sealed record FaixaDisponibilidadeRequest(DayOfWeek DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFim);
+    private sealed record AtualizarDisponibilidadeSemanalRequest(string FusoHorarioId, IReadOnlyList<FaixaDisponibilidadeRequest> Faixas);
+    private sealed record DisponibilidadeSemanalResponse(string? FusoHorarioId, IReadOnlyList<FaixaDisponibilidadeRequest> Faixas);
+    private sealed record HorarioAgendaResponse(DateTimeOffset InicioUtc, DateTimeOffset FimUtc, int QuantidadePontos, bool Disponivel);
+    private sealed record ApiError(string? Message);
+}

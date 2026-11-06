@@ -43,7 +43,8 @@ public sealed class AutenticacaoController(
         {
             new Claim(ClaimTypes.NameIdentifier, conta.Id.ToString()),
             new Claim(ClaimTypes.Name, conta.Nome),
-            new Claim(ClaimTypes.Email, conta.Email)
+            new Claim(ClaimTypes.Email, conta.Email),
+            new Claim("tipoPerfil", conta.TipoPerfil)
         }.ToList();
 
         var emailGerente = configuration["Gerente:Email"];

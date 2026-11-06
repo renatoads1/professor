@@ -1,0 +1,112 @@
+@page "/aulas/{Id:long}/chamada"
+@implements IAsyncDisposable
+@using Microsoft.AspNetCore.SignalR
+@inject professor.Services.AulaChamadaService Chamada
+@inject professor.Services.AuthTokenService AuthTokens
+
+<PageTitle>Chamada da aula</PageTitle>
+
+<div class="container mt-4">
+    <h1>Chamada da aula</h1>
+    <p>Aula #@Id</p>
+
+    @if (!AuthTokens.IsAuthenticated)
+    {
+        <div class="alert alert-warning" role="alert">Entre na plataforma para participar da aula.</div>
+    }
+    else
+    {
+        @if (_erro is not null)
+        {
+            <div class="alert alert-danger" role="alert">@_erro</div>
+        }
+
+        <p role="status" aria-live="polite">@Chamada.Estado</p>
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h2 class="h5">Você</h2>
+                <video @ref="_videoLocal" class="w-100 rounded bg-dark" autoplay muted playsinline></video>
+            </div>
+            <div class="col-md-6">
+                <h2 class="h5">Outro participante</h2>
+                <video @ref="_videoRemoto" class="w-100 rounded bg-dark" autoplay playsinline></video>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            @if (!Chamada.EmChamada)
+            {
+                <button class="btn btn-primary" @onclick="EntrarAsync" disabled="@_entrando">
+                    @(_entrando ? "Conectando..." : "Entrar na aula")
+                </button>
+            }
+            else
+            {
+                <button class="btn btn-outline-secondary" @onclick="Chamada.AlternarMicrofoneAsync">
+                    @(Chamada.MicrofoneAtivo ? "Desativar microfone" : "Ativar microfone")
+                </button>
+                <button class="btn btn-outline-secondary" @onclick="Chamada.AlternarCameraAsync">
+                    @(Chamada.CameraAtiva ? "Desativar câmera" : "Ativar câmera")
+                </button>
+                <button class="btn btn-danger" @onclick="SairAsync">Sair da aula</button>
+            }
+        </div>
+
+        <p class="form-text mt-3">
+            Permita o uso da câmera e do microfone no navegador. A chamada exige HTTPS, exceto em localhost.
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public long Id { get; set; }
+
+    private ElementReference _videoLocal;
+    private ElementReference _videoRemoto;
+    private bool _entrando;
+    private string? _erro;
+
+    protected override void OnInitialized() => Chamada.EstadoAlterado += EstadoAlteradoAsync;
+
+    private async Task EntrarAsync()
+    {
+        _entrando = true;
+        _erro = null;
+        try
+        {
+            await Chamada.EntrarAsync(Id, _videoLocal, _videoRemoto);
+        }
+        catch (HubException exception)
+        {
+            _erro = exception.Message;
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API de chamadas.";
+        }
+        catch (JSException)
+        {
+            _erro = "Não foi possível acessar a câmera ou o microfone. Verifique as permissões do navegador.";
+        }
+        catch (InvalidOperationException exception)
+        {
+            _erro = exception.Message;
+        }
+        finally
+        {
+            _entrando = false;
+        }
+    }
+
+    private Task SairAsync() => Chamada.SairAsync();
+
+    private Task EstadoAlteradoAsync() => InvokeAsync(StateHasChanged);
+
+    public async ValueTask DisposeAsync()
+    {
+        Chamada.EstadoAlterado -= EstadoAlteradoAsync;
+        await Chamada.SairAsync();
+    }
+}

@@ -12,6 +12,8 @@ public sealed class AlunosDbContext(DbContextOptions<AlunosDbContext> options) :
     public DbSet<LancamentoPontos> LancamentosPontos => Set<LancamentoPontos>();
     public DbSet<CompraPontos> ComprasPontos => Set<CompraPontos>();
     public DbSet<PacotePontos> PacotesPontos => Set<PacotePontos>();
+    public DbSet<DisponibilidadeSemanalProfessor> DisponibilidadesSemanaisProfessores => Set<DisponibilidadeSemanalProfessor>();
+    public DbSet<AulaAgendada> AulasAgendadas => Set<AulaAgendada>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -84,6 +86,63 @@ public sealed class AlunosDbContext(DbContextOptions<AlunosDbContext> options) :
             entity.HasIndex(pacote => pacote.Nome).IsUnique();
             entity.Property(pacote => pacote.Nome).HasMaxLength(100).IsRequired();
             entity.Property(pacote => pacote.CriadoEm).IsRequired();
+        });
+
+        modelBuilder.Entity<DisponibilidadeSemanalProfessor>(entity =>
+        {
+            entity.ToTable("DisponibilidadesSemanaisProfessores", table =>
+            {
+                table.HasCheckConstraint("CK_DisponibilidadesSemanaisProfessores_DiaSemana", "\"DiaSemana\" BETWEEN 0 AND 6");
+                table.HasCheckConstraint("CK_DisponibilidadesSemanaisProfessores_Intervalo", "\"HoraFim\" > \"HoraInicio\"");
+            });
+            entity.HasKey(disponibilidade => disponibilidade.Id);
+            entity.HasIndex(disponibilidade => new
+            {
+                disponibilidade.ProfessorId,
+                disponibilidade.DiaSemana,
+                disponibilidade.HoraInicio
+            }).IsUnique();
+            entity.Property(disponibilidade => disponibilidade.DiaSemana).HasConversion<int>();
+            entity.Property(disponibilidade => disponibilidade.HoraInicio).HasColumnType("time without time zone");
+            entity.Property(disponibilidade => disponibilidade.HoraFim).HasColumnType("time without time zone");
+            entity.Property(disponibilidade => disponibilidade.FusoHorarioId).HasMaxLength(100).IsRequired();
+            entity.HasOne(disponibilidade => disponibilidade.Professor)
+                .WithMany()
+                .HasForeignKey(disponibilidade => disponibilidade.ProfessorId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AulaAgendada>(entity =>
+        {
+            entity.ToTable("AulasAgendadas", table =>
+            {
+                table.HasCheckConstraint("CK_AulasAgendadas_Intervalo", "\"FimUtc\" > \"InicioUtc\"");
+                table.HasCheckConstraint("CK_AulasAgendadas_QuantidadePontos_Positive", "\"QuantidadePontos\" > 0");
+            });
+            entity.HasKey(aula => aula.Id);
+            entity.HasIndex(aula => new { aula.ProfessorId, aula.InicioUtc }).IsUnique();
+            entity.HasIndex(aula => new { aula.ContaAcessoProfessorId, aula.InicioUtc });
+            entity.HasIndex(aula => new { aula.ContaAcessoAlunoId, aula.InicioUtc });
+            entity.HasIndex(aula => new { aula.ContaAcessoAlunoId, aula.ChaveIdempotencia }).IsUnique();
+            entity.Property(aula => aula.ChaveIdempotencia).HasMaxLength(100).IsRequired();
+            entity.HasIndex(aula => new { aula.ContaAcessoAlunoId, aula.ChaveIdempotencia }).IsUnique();
+            entity.Property(aula => aula.ChaveIdempotencia).HasMaxLength(100).IsRequired();
+            entity.Property(aula => aula.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
+            entity.Property(aula => aula.InicioUtc).IsRequired();
+            entity.Property(aula => aula.FimUtc).IsRequired();
+            entity.Property(aula => aula.CriadaEm).IsRequired();
+            entity.HasOne(aula => aula.Professor)
+                .WithMany()
+                .HasForeignKey(aula => aula.ProfessorId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(aula => aula.ContaAcessoProfessor)
+                .WithMany()
+                .HasForeignKey(aula => aula.ContaAcessoProfessorId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(aula => aula.ContaAcessoAluno)
+                .WithMany()
+                .HasForeignKey(aula => aula.ContaAcessoAlunoId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

@@ -1,0 +1,11 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - img [ref=e8]
+    - generic [ref=e44]:
+      - generic [ref=e45]: Select a definition
+      - combobox "Select a definition" [disabled] [ref=e46]:
+        - option "APILinguagem v1" [selected]
+  - generic [ref=e48]:
+    - generic:
+      - generic:
+        - generic: loading

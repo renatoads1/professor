@@ -1,0 +1,501 @@
+@page "/agendar-aula"
+@page "/agendar-aula/{ProfessorId:int}"
+@page "/agendar-aula/{ProfessorId:int}/{Data}"
+@using System.Globalization
+@using System.Text.Json
+@using ProfessorModel = professor.Model.Professores
+@inject HttpClient Http
+@inject professor.Services.AuthTokenService AuthTokens
+
+<PageTitle>Agendar aula</PageTitle>
+
+<div class="container mt-4">
+    <h1>Agendar aula</h1>
+
+    @if (!AuthTokens.IsAuthenticated)
+    {
+        <div class="alert alert-warning" role="alert">
+            Entre na plataforma para consultar horários e reservar uma aula.
+            <NavLink class="alert-link" href="login">Entrar</NavLink>
+        </div>
+    }
+    else if (!AuthTokens.IsStudent)
+    {
+        <div class="alert alert-info" role="status">A reserva de aulas está disponível somente para alunos.</div>
+    }
+    else
+    {
+        @if (_erro is not null)
+        {
+            <div class="alert alert-danger" role="alert">@_erro</div>
+        }
+        @if (_saldoPontos.HasValue)
+        {
+            <p class="text-muted">Saldo disponível: @_saldoPontos pontos</p>
+        }
+        @if (_mensagem is not null)
+        {
+            <div class="alert alert-success" role="status">@_mensagem</div>
+            <NavLink class="btn btn-outline-primary mb-3" href="minhas-aulas">Ver minhas aulas</NavLink>
+        }
+
+        <section class="card card-body mb-4" aria-labelledby="pesquisa-professor-titulo">
+            <h2 id="pesquisa-professor-titulo" class="h4">Pesquisar professor</h2>
+            <div class="row g-3 align-items-end">
+                <div class="col-sm-6 col-lg-4">
+                    <label for="nome-professor" class="form-label">Nome</label>
+                    <InputText id="nome-professor" class="form-control" @bind-Value="_nomeProfessor" />
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                    <label for="idioma-professor" class="form-label">Idioma</label>
+                    <InputText id="idioma-professor" class="form-control" @bind-Value="_idiomaProfessor" />
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                    <label for="cidade-professor" class="form-label">Cidade</label>
+                    <InputText id="cidade-professor" class="form-control" @bind-Value="_cidadeProfessor" />
+                </div>
+                <div class="col-auto">
+                    <button type="button" class="btn btn-primary" @onclick="PesquisarProfessoresAsync" disabled="@_pesquisando">
+                        @(_pesquisando ? "Pesquisando..." : "Pesquisar")
+                    </button>
+                </div>
+            </div>
+            <p class="form-text mb-0 mt-2">A pesquisa utiliza o mesmo sistema de pontos da busca de professores na Home.</p>
+        </section>
+
+        @if (_professores.Count > 0)
+        {
+            <h2 class="h4">Resultados da pesquisa</h2>
+            <div class="list-group mb-4">
+                @foreach (var professor in _professores)
+                {
+                    <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <div>
+                            <h3 class="h5 mb-1">@professor.Nome</h3>
+                            <div>@professor.LinguaDeEnsino · @professor.Cidade, @professor.Estado</div>
+                            <div>@professor.HoraAula.ToString("C", Cultura) por aula</div>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary" @onclick="() => SelecionarProfessorAsync(professor)" disabled="@_carregando">
+                            @(professor.Id == _professorId ? "Professor selecionado" : "Ver agenda")
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_professorSelecionado is not null)
+        {
+            <h2 class="h4">Agenda de @_professorSelecionado.Nome</h2>
+            <p class="text-muted">Os horários são exibidos no seu fuso local.</p>
+            <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+                <button type="button" class="btn btn-outline-secondary" @onclick="MesAnteriorAsync" disabled="@_carregando" aria-label="Mês anterior">‹</button>
+                <div class="fw-semibold" aria-live="polite">@_mesExibido.ToDateTime(TimeOnly.MinValue).ToString("MMMM 'de' yyyy", Cultura)</div>
+                <button type="button" class="btn btn-outline-secondary" @onclick="ProximoMesAsync" disabled="@_carregando" aria-label="Próximo mês">›</button>
+                <button type="button" class="btn btn-outline-secondary" @onclick="IrParaHojeAsync" disabled="@_carregando">Hoje</button>
+                <div>
+                    <label for="data-agenda" class="form-label mb-1">Abrir data</label>
+                    <input id="data-agenda" class="form-control" type="date" value="@_dataAbertura" @onchange="AbrirDataAsync" />
+                </div>
+            </div>
+            @if (_carregando)
+            {
+                <p>Carregando agenda...</p>
+            }
+            else if (_buscaConcluida)
+            {
+                <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-4">
+                    @foreach (var dia in _diasAgenda)
+                    {
+                        var horariosDoDia = HorariosDoDia(dia);
+                        <div class="col">
+                            <section class="card h-100" aria-label="Agenda de @dia.ToDateTime(TimeOnly.MinValue).ToString("D", Cultura)">
+                                <div class="card-header d-flex justify-content-between align-items-center gap-2">
+                                    <h3 class="h6 mb-0">@dia.ToDateTime(TimeOnly.MinValue).ToString("dddd, d 'de' MMMM", Cultura)</h3>
+                                    <span class="badge @ClasseStatusDia(horariosDoDia)">@StatusDia(horariosDoDia)</span>
+                                </div>
+                                <div class="card-body">
+                                    @if (horariosDoDia.Count == 0)
+                                    {
+                                        <p class="text-muted mb-0">Sem disponibilidade publicada.</p>
+                                    }
+                                    else
+                                    {
+                                        <div class="d-grid gap-2">
+                                            @foreach (var horario in horariosDoDia)
+                                            {
+                                                @if (horario.Disponivel)
+                                                {
+                                                    <label class="border rounded p-2 d-flex align-items-center gap-2">
+                                                        <input class="form-check-input m-0" type="radio" name="horario" checked="@(_horarioSelecionadoUtc == horario.InicioUtc)" @onchange="() => SelecionarHorario(horario.InicioUtc)" />
+                                                        <span>@horario.InicioUtc.ToLocalTime().ToString("HH:mm", Cultura)–@horario.FimUtc.ToLocalTime().ToString("HH:mm", Cultura) · @horario.QuantidadePontos pontos</span>
+                                                    </label>
+                                                }
+                                                else
+                                                {
+                                                    <div class="border rounded p-2 d-flex justify-content-between align-items-center gap-2 text-muted">
+                                                        <span>@horario.InicioUtc.ToLocalTime().ToString("HH:mm", Cultura)–@horario.FimUtc.ToLocalTime().ToString("HH:mm", Cultura)</span>
+                                                        <span class="badge text-bg-secondary">Ocupado</span>
+                                                    </div>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </section>
+                        </div>
+                    }
+                </div>
+                <button type="button" class="btn btn-success" @onclick="ReservarAsync" disabled="@(!_horarioSelecionadoUtc.HasValue || _reservando)">
+                    @(_reservando ? "Reservando..." : "Confirmar reserva")
+                </button>
+            }
+        }
+    }
+</div>
+
+@code {
+    private static readonly CultureInfo Cultura = CultureInfo.GetCultureInfo("pt-BR");
+    private List<ProfessorModel> _professores = [];
+    private ProfessorModel? _professorSelecionado;
+    private List<HorarioAgendaResponse> _agenda = [];
+    private List<DateOnly> _diasAgenda = [];
+    private string _nomeProfessor = string.Empty;
+    private string _idiomaProfessor = string.Empty;
+    private string _cidadeProfessor = string.Empty;
+    private int? _professorId;
+    private DateTimeOffset? _horarioSelecionadoUtc;
+    private int? _saldoPontos;
+    private bool _pesquisando;
+    private bool _carregando;
+    private bool _reservando;
+    private bool _buscaConcluida;
+    private DateOnly _mesExibido = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private string? _dataAbertura;
+    private string? _parametrosCarregados;
+    private string? _erro;
+    private string? _mensagem;
+    private Guid _chaveIdempotencia = Guid.NewGuid();
+
+    [Parameter]
+    public int ProfessorId { get; set; }
+
+    [Parameter]
+    public string? Data { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ProfessorId <= 0)
+        {
+            return;
+        }
+
+        if (DateOnly.TryParseExact(Data, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dataRota))
+        {
+            _mesExibido = new DateOnly(dataRota.Year, dataRota.Month, 1);
+            _dataAbertura = dataRota.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+
+        var chaveParametros = $"{ProfessorId}:{Data}";
+        if (_parametrosCarregados == chaveParametros)
+        {
+            return;
+        }
+
+        _parametrosCarregados = chaveParametros;
+        _professorId = ProfessorId;
+        try
+        {
+            _professorSelecionado = await Http.GetFromJsonAsync<ProfessorModel>($"api/Professores/{ProfessorId}");
+            if (_professorSelecionado is not null)
+            {
+                await BuscarHorariosAsync();
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível carregar o professor informado.";
+        }
+        catch (JsonException)
+        {
+            _erro = "A resposta da API de professores não pôde ser lida.";
+        }
+    }
+
+    private async Task PesquisarProfessoresAsync()
+    {
+        _erro = null;
+        _mensagem = null;
+        _professores.Clear();
+        _professorSelecionado = null;
+        _professorId = null;
+        _agenda.Clear();
+        _diasAgenda.Clear();
+        _buscaConcluida = false;
+
+        if (string.IsNullOrWhiteSpace(_nomeProfessor)
+            && string.IsNullOrWhiteSpace(_idiomaProfessor)
+            && string.IsNullOrWhiteSpace(_cidadeProfessor))
+        {
+            _erro = "Informe ao menos nome, idioma ou cidade para pesquisar.";
+            return;
+        }
+
+        _pesquisando = true;
+        try
+        {
+            var request = new PesquisaProfessoresRequest(
+                Guid.NewGuid(), _nomeProfessor, _idiomaProfessor, _cidadeProfessor, true);
+            using var response = await Http.PostAsJsonAsync("api/Professores/pesquisar", request);
+            if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired)
+            {
+                var saldoInsuficiente = await response.Content.ReadFromJsonAsync<SaldoInsuficienteResponse>();
+                _saldoPontos = saldoInsuficiente?.SaldoPontos;
+                _erro = saldoInsuficiente?.Message ?? "Saldo insuficiente para pesquisar professores.";
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroApiAsync(response, "Não foi possível pesquisar professores.");
+                return;
+            }
+
+            var resultado = await response.Content.ReadFromJsonAsync<PesquisaResponse<ProfessorModel>>()
+                ?? throw new JsonException("A API retornou uma pesquisa vazia.");
+            _professores = resultado.Resultados.ToList();
+            _saldoPontos = resultado.SaldoPontos;
+            if (_professores.Count == 0)
+            {
+                _erro = "Nenhum professor encontrado com esses filtros.";
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API para pesquisar professores.";
+        }
+        catch (JsonException)
+        {
+            _erro = "A resposta da API de pesquisa não pôde ser lida.";
+        }
+        finally
+        {
+            _pesquisando = false;
+        }
+    }
+
+    private async Task SelecionarProfessorAsync(ProfessorModel professor)
+    {
+        _professorSelecionado = professor;
+        _professorId = professor.Id;
+        await BuscarHorariosAsync();
+    }
+
+    private async Task BuscarHorariosAsync(bool preservarMensagem = false)
+    {
+        _erro = null;
+        if (!preservarMensagem)
+        {
+            _mensagem = null;
+        }
+        _agenda.Clear();
+        _diasAgenda.Clear();
+        _horarioSelecionadoUtc = null;
+        _buscaConcluida = false;
+
+        if (_professorId is not > 0)
+        {
+            _erro = "Selecione um professor para consultar a agenda.";
+            return;
+        }
+
+        _carregando = true;
+        try
+        {
+            var inicioLocal = DateTime.SpecifyKind(_mesExibido.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
+            var primeiroDiaProximoMes = _mesExibido.AddMonths(1);
+            var fimLocal = DateTime.SpecifyKind(primeiroDiaProximoMes.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
+            var inicioUtc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(inicioLocal, TimeZoneInfo.Local), TimeSpan.Zero);
+            var fimUtc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(fimLocal, TimeZoneInfo.Local), TimeSpan.Zero);
+            var agendaPorInicio = new Dictionary<DateTimeOffset, HorarioAgendaResponse>();
+
+            // A API limita cada consulta a 31 dias. Janelas de 30 dias com uma hora
+            // de sobreposição evitam perder slots que cruzem a fronteira entre consultas.
+            var inicioConsultaUtc = inicioUtc;
+            while (inicioConsultaUtc < fimUtc)
+            {
+                var fimConsultaUtc = inicioConsultaUtc.AddDays(30);
+                if (fimConsultaUtc > fimUtc)
+                {
+                    fimConsultaUtc = fimUtc;
+                }
+
+                var inicio = Uri.EscapeDataString(inicioConsultaUtc.ToString("O", CultureInfo.InvariantCulture));
+                var fim = Uri.EscapeDataString(fimConsultaUtc.ToString("O", CultureInfo.InvariantCulture));
+                var url = $"api/agenda/professores/{_professorId}/agenda?inicioUtc={inicio}&fimUtc={fim}";
+                using var response = await Http.GetAsync(url);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _erro = await LerErroApiAsync(response, "Não foi possível consultar a agenda do professor.");
+                    return;
+                }
+
+                var horarios = await response.Content.ReadFromJsonAsync<List<HorarioAgendaResponse>>() ?? [];
+                foreach (var horario in horarios)
+                {
+                    agendaPorInicio[horario.InicioUtc] = horario;
+                }
+
+                if (fimConsultaUtc == fimUtc)
+                {
+                    break;
+                }
+
+                inicioConsultaUtc = fimConsultaUtc.AddHours(-1);
+            }
+
+            _agenda = agendaPorInicio.Values.OrderBy(horario => horario.InicioUtc).ToList();
+            _diasAgenda = Enumerable.Range(0, DateTime.DaysInMonth(_mesExibido.Year, _mesExibido.Month))
+                .Select(indice => _mesExibido.AddDays(indice))
+                .ToList();
+            _buscaConcluida = true;
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API para consultar a agenda.";
+        }
+        catch (JsonException)
+        {
+            _erro = "A resposta da API da agenda não pôde ser lida.";
+        }
+        finally
+        {
+            _carregando = false;
+        }
+    }
+
+    private Task MesAnteriorAsync() => AlterarMesAsync(_mesExibido.AddMonths(-1));
+
+    private Task ProximoMesAsync() => AlterarMesAsync(_mesExibido.AddMonths(1));
+
+    private Task IrParaHojeAsync() => AlterarMesAsync(new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1));
+
+    private async Task AbrirDataAsync(ChangeEventArgs args)
+    {
+        _dataAbertura = args.Value?.ToString();
+        if (DateOnly.TryParseExact(_dataAbertura, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var data))
+        {
+            await AlterarMesAsync(new DateOnly(data.Year, data.Month, 1));
+        }
+    }
+
+    private async Task AlterarMesAsync(DateOnly novoMes)
+    {
+        _mesExibido = new DateOnly(novoMes.Year, novoMes.Month, 1);
+        if (_professorId is > 0)
+        {
+            await BuscarHorariosAsync();
+        }
+    }
+
+    private void SelecionarHorario(DateTimeOffset inicioUtc)
+    {
+        _horarioSelecionadoUtc = inicioUtc;
+        _chaveIdempotencia = Guid.NewGuid();
+    }
+
+    private async Task ReservarAsync()
+    {
+        if (_professorId is not > 0 || _horarioSelecionadoUtc is not DateTimeOffset inicioUtc)
+        {
+            return;
+        }
+
+        _erro = null;
+        _mensagem = null;
+        _reservando = true;
+        try
+        {
+            var horario = _agenda.FirstOrDefault(item => item.InicioUtc == inicioUtc && item.Disponivel);
+            if (horario is null)
+            {
+                _erro = "Selecione um horário que ainda esteja disponível.";
+                return;
+            }
+
+            var request = new ReservarAulaRequest(_professorId.Value, horario.InicioUtc, _chaveIdempotencia);
+            using var response = await Http.PostAsJsonAsync("api/agenda/aulas", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroApiAsync(response, "Não foi possível reservar este horário.");
+                return;
+            }
+
+            _mensagem = "Aula reservada com sucesso.";
+            _chaveIdempotencia = Guid.NewGuid();
+            await BuscarHorariosAsync(preservarMensagem: true);
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API para reservar a aula.";
+        }
+        catch (JsonException)
+        {
+            _erro = "A resposta da API de reserva não pôde ser lida.";
+        }
+        finally
+        {
+            _reservando = false;
+        }
+    }
+
+    private List<HorarioAgendaResponse> HorariosDoDia(DateOnly dia) => _agenda
+        .Where(horario => DateOnly.FromDateTime(horario.InicioUtc.ToLocalTime().DateTime) == dia)
+        .OrderBy(horario => horario.InicioUtc)
+        .ToList();
+
+    private static string StatusDia(IReadOnlyCollection<HorarioAgendaResponse> horarios)
+    {
+        if (horarios.Count == 0)
+        {
+            return "Sem disponibilidade";
+        }
+
+        if (horarios.All(horario => !horario.Disponivel))
+        {
+            return "Ocupado";
+        }
+
+        return horarios.Any(horario => !horario.Disponivel)
+            ? "Parcialmente ocupado"
+            : "Disponível";
+    }
+
+    private static string ClasseStatusDia(IReadOnlyCollection<HorarioAgendaResponse> horarios) =>
+        horarios.Count == 0
+            ? "text-bg-light"
+            : horarios.All(horario => !horario.Disponivel)
+                ? "text-bg-secondary"
+                : horarios.Any(horario => !horario.Disponivel)
+                    ? "text-bg-warning"
+                    : "text-bg-success";
+
+    private static async Task<string> LerErroApiAsync(HttpResponseMessage response, string mensagemPadrao)
+    {
+        try
+        {
+            var erro = await response.Content.ReadFromJsonAsync<ApiError>();
+            return erro?.Message ?? mensagemPadrao;
+        }
+        catch (JsonException)
+        {
+            return mensagemPadrao;
+        }
+    }
+
+    private sealed record HorarioAgendaResponse(DateTimeOffset InicioUtc, DateTimeOffset FimUtc, int QuantidadePontos, bool Disponivel);
+    private sealed record PesquisaProfessoresRequest(Guid ChaveIdempotencia, string? Nome, string? LinguaDeEnsino, string? Cidade, bool? Ativo);
+    private sealed record PesquisaResponse<T>(IReadOnlyList<T> Resultados, int SaldoPontos);
+    private sealed record SaldoInsuficienteResponse(string? Message, int SaldoPontos);
+    private sealed record ReservarAulaRequest(int ProfessorId, DateTimeOffset InicioUtc, Guid ChaveIdempotencia);
+    private sealed record ApiError(string? Message);
+}

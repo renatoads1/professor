@@ -12,5 +12,6 @@ var apiBaseUrl = builder.Configuration["ApiBaseUrl"]
 
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(apiBaseUrl) });
 builder.Services.AddScoped<AuthTokenService>();
+builder.Services.AddScoped<AulaChamadaService>();
 
 await builder.Build().RunAsync();

@@ -1,0 +1,306 @@
+@page "/gerenciar/pontos"
+@using System.ComponentModel.DataAnnotations
+@using System.Globalization
+@inject HttpClient Http
+@inject professor.Services.AuthTokenService AuthTokens
+
+<PageTitle>Gerenciar pontos</PageTitle>
+
+<div class="container mt-4">
+    <h1>Gerenciar pontos</h1>
+    @if (!AuthTokens.IsManager)
+    {
+        <div class="alert alert-danger" role="alert">Acesso permitido somente ao usuário gerente.</div>
+    }
+    else
+    {
+        @if (_erro is not null)
+        {
+            <div class="alert alert-danger" role="alert">@_erro</div>
+        }
+        @if (_mensagem is not null)
+        {
+            <div class="alert alert-success" role="status">@_mensagem</div>
+        }
+
+        <div class="row g-2 align-items-end mb-4">
+            <div class="col-md-6">
+                <label for="email-conta" class="form-label">Pesquisar aluno ou professor por e-mail</label>
+                <InputText id="email-conta" class="form-control" @bind-Value="_emailBusca" />
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-outline-primary" @onclick="BuscarContasAsync" disabled="@_carregando">Pesquisar</button>
+            </div>
+        </div>
+
+        @if (_contas.Count > 0)
+        {
+            <div class="table-responsive mb-4">
+                <table class="table align-middle">
+                    <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Saldo</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var conta in _contas)
+                        {
+                            <tr>
+                                <td>@conta.Nome</td><td>@conta.Email</td><td>@conta.TipoPerfil</td><td>@conta.SaldoPontos</td>
+                                <td><button type="button" class="btn btn-sm btn-primary" @onclick="() => SelecionarContaAsync(conta)">Gerenciar pontos</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (_pesquisou && !_carregando)
+        {
+            <p>Nenhuma conta encontrada.</p>
+        }
+
+        @if (_contaSelecionada is not null)
+        {
+            <section aria-labelledby="ajuste-titulo">
+                <h2 id="ajuste-titulo" class="h4">Pontos de @_contaSelecionada.Nome (@_contaSelecionada.Email)</h2>
+                <p>Saldo atual: <strong>@_contaSelecionada.SaldoPontos</strong></p>
+                <p class="text-muted">Informe uma quantidade positiva para adicionar ou negativa para retirar. Cada ajuste é registrado no histórico.</p>
+
+                <EditForm Model="_formulario" OnValidSubmit="SalvarAsync" FormName="ajuste-pontos-form">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+                    <div class="row g-3 align-items-end mb-3">
+                        <div class="col-md-3">
+                            <label for="quantidade-pontos" class="form-label">Quantidade (+/-)</label>
+                            <InputNumber id="quantidade-pontos" class="form-control" @bind-Value="_formulario.Quantidade" />
+                        </div>
+                        <div class="col-md-6">
+                            <label for="motivo-ajuste" class="form-label">Motivo</label>
+                            <InputText id="motivo-ajuste" class="form-control" @bind-Value="_formulario.Motivo" />
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-primary" disabled="@_salvando">@(_idEdicao is null ? "Adicionar ajuste" : "Salvar edição")</button>
+                        </div>
+                        @if (_idEdicao is not null)
+                        {
+                            <div class="col-auto"><button type="button" class="btn btn-outline-secondary" @onclick="CancelarEdicao">Cancelar</button></div>
+                        }
+                    </div>
+                </EditForm>
+
+                <h3 class="h5 mt-4">Ajustes gerenciais</h3>
+                @if (_ajustes.Count == 0)
+                {
+                    <p>Nenhum ajuste gerencial para esta conta.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead><tr><th>Quantidade</th><th>Motivo</th><th>Data</th><th>Ações</th></tr></thead>
+                            <tbody>
+                                @foreach (var ajuste in _ajustes)
+                                {
+                                    <tr>
+                                        <td>@ajuste.Quantidade</td><td>@ajuste.Motivo</td>
+                                        <td>@ajuste.Data.ToLocalTime().ToString("g", CultureInfo.GetCultureInfo("pt-BR"))</td>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-outline-primary me-2" @onclick="() => Editar(ajuste)">Editar</button>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => ExcluirAsync(ajuste)">Excluir</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private string _emailBusca = string.Empty;
+    private List<ContaResponse> _contas = [];
+    private ContaResponse? _contaSelecionada;
+    private List<AjusteResponse> _ajustes = [];
+    private readonly FormularioAjuste _formulario = new();
+    private bool _carregando;
+    private bool _salvando;
+    private bool _pesquisou;
+    private Guid? _idEdicao;
+    private string? _erro;
+    private string? _mensagem;
+
+    private async Task BuscarContasAsync()
+    {
+        _erro = null;
+        _pesquisou = true;
+        if (_emailBusca.Trim().Length < 3)
+        {
+            _contas = [];
+            _erro = "Informe ao menos 3 caracteres do e-mail para pesquisar.";
+            return;
+        }
+
+        _carregando = true;
+        try
+        {
+            var url = $"api/gerenciar-pontos/contas?email={Uri.EscapeDataString(_emailBusca.Trim())}";
+            using var response = await Http.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroAsync(response) ?? "Não foi possível pesquisar as contas.";
+                return;
+            }
+            _contas = await response.Content.ReadFromJsonAsync<List<ContaResponse>>() ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API.";
+        }
+        finally
+        {
+            _carregando = false;
+        }
+    }
+
+    private async Task SelecionarContaAsync(ContaResponse conta)
+    {
+        _contaSelecionada = conta;
+        CancelarEdicao();
+        _mensagem = null;
+        await CarregarAjustesAsync();
+    }
+
+    private async Task CarregarAjustesAsync()
+    {
+        if (_contaSelecionada is null) return;
+        try
+        {
+            using var response = await Http.GetAsync($"api/gerenciar-pontos/contas/{_contaSelecionada.Id}/ajustes");
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroAsync(response) ?? "Não foi possível carregar os ajustes.";
+                return;
+            }
+            _ajustes = await response.Content.ReadFromJsonAsync<List<AjusteResponse>>() ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API.";
+        }
+    }
+
+    private async Task SalvarAsync()
+    {
+        if (_contaSelecionada is null) return;
+        if (_formulario.Quantidade == 0)
+        {
+            _erro = "A quantidade de pontos não pode ser zero.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_formulario.Motivo))
+        {
+            _erro = "Informe o motivo do ajuste.";
+            return;
+        }
+
+        _erro = null;
+        _mensagem = null;
+        _salvando = true;
+        try
+        {
+            using var response = _idEdicao is Guid id
+                ? await Http.PutAsJsonAsync($"api/gerenciar-pontos/contas/{_contaSelecionada.Id}/ajustes/{id}", _formulario)
+                : await Http.PostAsJsonAsync($"api/gerenciar-pontos/contas/{_contaSelecionada.Id}/ajustes", _formulario);
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroAsync(response) ?? "Não foi possível salvar o ajuste.";
+                return;
+            }
+            _mensagem = _idEdicao is null ? "Pontos adicionados/retirados com sucesso." : "Ajuste atualizado com sucesso.";
+            CancelarEdicao();
+            await AtualizarContaSelecionadaAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API.";
+        }
+        finally
+        {
+            _salvando = false;
+        }
+    }
+
+    private async Task ExcluirAsync(AjusteResponse ajuste)
+    {
+        if (_contaSelecionada is null) return;
+        _erro = null;
+        _mensagem = null;
+        try
+        {
+            using var response = await Http.DeleteAsync($"api/gerenciar-pontos/contas/{_contaSelecionada.Id}/ajustes/{ajuste.Id}");
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroAsync(response) ?? "Não foi possível excluir o ajuste.";
+                return;
+            }
+            _mensagem = "Ajuste excluído e saldo corrigido.";
+            await AtualizarContaSelecionadaAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API.";
+        }
+    }
+
+    private async Task AtualizarContaSelecionadaAsync()
+    {
+        if (_contaSelecionada is null) return;
+        var id = _contaSelecionada.Id;
+        await BuscarContasAsync();
+        _contaSelecionada = _contas.FirstOrDefault(conta => conta.Id == id);
+        await CarregarAjustesAsync();
+    }
+
+    private void Editar(AjusteResponse ajuste)
+    {
+        _idEdicao = ajuste.Id;
+        _formulario.Quantidade = ajuste.Quantidade;
+        _formulario.Motivo = ajuste.Motivo;
+        _mensagem = null;
+        _erro = null;
+    }
+
+    private void CancelarEdicao()
+    {
+        _idEdicao = null;
+        _formulario.Quantidade = 1;
+        _formulario.Motivo = string.Empty;
+    }
+
+    private static async Task<string?> LerErroAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var body = await response.Content.ReadFromJsonAsync<ApiErro>();
+            return body?.Message;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed class FormularioAjuste
+    {
+        [Range(int.MinValue, int.MaxValue, ErrorMessage = "Informe uma quantidade diferente de zero.")]
+        [Required(ErrorMessage = "Informe a quantidade de pontos.")]
+        public int Quantidade { get; set; } = 1;
+
+        [Required(ErrorMessage = "Informe o motivo.")]
+        [StringLength(150, MinimumLength = 1, ErrorMessage = "O motivo deve ter até 150 caracteres.")]
+        public string Motivo { get; set; } = string.Empty;
+    }
+
+    private sealed record ContaResponse(int Id, string Email, string Nome, string TipoPerfil, int SaldoPontos);
+    private sealed record AjusteResponse(Guid Id, int Quantidade, string Motivo, DateTimeOffset Data);
+    private sealed record ApiErro(string? Message);
+}

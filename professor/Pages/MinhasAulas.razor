@@ -1,0 +1,85 @@
+@page "/minhas-aulas"
+@inject HttpClient Http
+@inject professor.Services.AuthTokenService AuthTokens
+
+<PageTitle>Minhas aulas</PageTitle>
+
+<div class="container mt-4">
+    <h1>Minhas aulas</h1>
+
+    @if (!AuthTokens.IsAuthenticated)
+    {
+        <div class="alert alert-warning" role="alert">Entre na plataforma para consultar suas aulas.</div>
+    }
+    else if (_carregando)
+    {
+        <p>Carregando aulas...</p>
+    }
+    else if (_erro is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_erro</div>
+    }
+    else if (_aulas.Count == 0)
+    {
+        <p>Você ainda não tem aulas agendadas.</p>
+    }
+    else
+    {
+        <div class="list-group">
+            @foreach (var aula in _aulas)
+            {
+                <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div>
+                        <h2 class="h5 mb-1">Aula com professor #@aula.ProfessorId</h2>
+                        <div>@aula.InicioUtc.ToLocalTime().ToString("f", Cultura)</div>
+                        <div>@aula.QuantidadePontos pontos · @aula.Status</div>
+                    </div>
+                    <a class="btn btn-primary" href="@($"/aulas/{aula.Id}/chamada")">Abrir chamada</a>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo Cultura = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private List<AulaResponse> _aulas = [];
+    private bool _carregando = true;
+    private string? _erro;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthTokens.IsAuthenticated)
+        {
+            _carregando = false;
+            return;
+        }
+
+        try
+        {
+            using var response = await Http.GetAsync("api/agenda/minhas-aulas");
+            response.EnsureSuccessStatusCode();
+            _aulas = await response.Content.ReadFromJsonAsync<List<AulaResponse>>() ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível carregar suas aulas.";
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            _erro = "A resposta da API de aulas não pôde ser lida.";
+        }
+        finally
+        {
+            _carregando = false;
+        }
+    }
+
+    private sealed record AulaResponse(
+        long Id,
+        int ProfessorId,
+        DateTimeOffset InicioUtc,
+        DateTimeOffset FimUtc,
+        int QuantidadePontos,
+        string Status);
+}

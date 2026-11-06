@@ -22,6 +22,65 @@ namespace APILinguagem.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("APILinguagem.Models.AulaAgendada", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ChaveIdempotencia")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("ContaAcessoAlunoId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ContaAcessoProfessorId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CriadaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("FimUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("InicioUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ProfessorId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("QuantidadePontos")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContaAcessoAlunoId", "ChaveIdempotencia")
+                        .IsUnique();
+
+                    b.HasIndex("ContaAcessoAlunoId", "InicioUtc");
+
+                    b.HasIndex("ContaAcessoProfessorId", "InicioUtc");
+
+                    b.HasIndex("ProfessorId", "InicioUtc")
+                        .IsUnique();
+
+                    b.ToTable("AulasAgendadas", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_AulasAgendadas_Intervalo", "\"FimUtc\" > \"InicioUtc\"");
+
+                            t.HasCheckConstraint("CK_AulasAgendadas_QuantidadePontos_Positive", "\"QuantidadePontos\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("APILinguagem.Models.CompraPontos", b =>
                 {
                     b.Property<long>("Id")
@@ -112,6 +171,44 @@ namespace APILinguagem.Migrations
                         .IsUnique();
 
                     b.ToTable("ContasAcesso", (string)null);
+                });
+
+            modelBuilder.Entity("APILinguagem.Models.DisponibilidadeSemanalProfessor", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("DiaSemana")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FusoHorarioId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<TimeOnly>("HoraFim")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<TimeOnly>("HoraInicio")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<int>("ProfessorId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfessorId", "DiaSemana", "HoraInicio")
+                        .IsUnique();
+
+                    b.ToTable("DisponibilidadesSemanaisProfessores", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_DisponibilidadesSemanaisProfessores_DiaSemana", "\"DiaSemana\" BETWEEN 0 AND 6");
+
+                            t.HasCheckConstraint("CK_DisponibilidadesSemanaisProfessores_Intervalo", "\"HoraFim\" > \"HoraInicio\"");
+                        });
                 });
 
             modelBuilder.Entity("APILinguagem.Models.LancamentoPontos", b =>
@@ -308,6 +405,33 @@ namespace APILinguagem.Migrations
                     b.ToTable("Professores", (string)null);
                 });
 
+            modelBuilder.Entity("APILinguagem.Models.AulaAgendada", b =>
+                {
+                    b.HasOne("APILinguagem.Models.ContaAcesso", "ContaAcessoAluno")
+                        .WithMany()
+                        .HasForeignKey("ContaAcessoAlunoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("APILinguagem.Models.ContaAcesso", "ContaAcessoProfessor")
+                        .WithMany()
+                        .HasForeignKey("ContaAcessoProfessorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("professor.Model.Professores", "Professor")
+                        .WithMany()
+                        .HasForeignKey("ProfessorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ContaAcessoAluno");
+
+                    b.Navigation("ContaAcessoProfessor");
+
+                    b.Navigation("Professor");
+                });
+
             modelBuilder.Entity("APILinguagem.Models.CompraPontos", b =>
                 {
                     b.HasOne("APILinguagem.Models.ContaAcesso", "ContaAcesso")
@@ -317,6 +441,17 @@ namespace APILinguagem.Migrations
                         .IsRequired();
 
                     b.Navigation("ContaAcesso");
+                });
+
+            modelBuilder.Entity("APILinguagem.Models.DisponibilidadeSemanalProfessor", b =>
+                {
+                    b.HasOne("professor.Model.Professores", "Professor")
+                        .WithMany()
+                        .HasForeignKey("ProfessorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Professor");
                 });
 
             modelBuilder.Entity("APILinguagem.Models.LancamentoPontos", b =>

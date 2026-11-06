@@ -56,12 +56,45 @@
                 @if (!MenuRecolhido) { <span>Professores</span> }
             </NavLink>
         </div>
+        @if (AuthTokens.IsAuthenticated)
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="minhas-aulas">
+                    <span class="bi bi-calendar-check" aria-hidden="true"></span>
+                    @if (!MenuRecolhido) { <span>Minhas aulas</span> }
+                </NavLink>
+            </div>
+        }
+        @if (AuthTokens.IsStudent)
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="agendar-aula">
+                    <span class="bi bi-calendar-plus" aria-hidden="true"></span>
+                    @if (!MenuRecolhido) { <span>Agendar aula</span> }
+                </NavLink>
+            </div>
+        }
+        @if (AuthTokens.IsTeacher)
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="minha-agenda">
+                    <span class="bi bi-calendar-week" aria-hidden="true"></span>
+                    @if (!MenuRecolhido) { <span>Disponibilidade</span> }
+                </NavLink>
+            </div>
+        }
         @if (AuthTokens.IsManager)
         {
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="gerenciar/pacotes-pontos">
                     <span class="bi bi-gear-fill" aria-hidden="true"></span>
                     @if (!MenuRecolhido) { <span>Gerenciar</span> }
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="gerenciar/pontos">
+                    <span class="bi bi-coin" aria-hidden="true"></span>
+                    @if (!MenuRecolhido) { <span>Gerenciar pontos</span> }
                 </NavLink>
             </div>
         }

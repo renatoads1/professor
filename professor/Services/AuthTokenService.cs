@@ -12,7 +12,10 @@ public sealed class AuthTokenService(IJSRuntime jsRuntime, HttpClient httpClient
 
     public bool IsAuthenticated { get; private set; }
     public bool IsManager { get; private set; }
+    public bool IsStudent { get; private set; }
+    public bool IsTeacher { get; private set; }
     public string? UserName { get; private set; }
+    public string? AccessToken { get; private set; }
     public event Action? AuthenticationStateChanged;
 
     public async Task SetTokenAsync(string token, string userName)
@@ -50,11 +53,43 @@ public sealed class AuthTokenService(IJSRuntime jsRuntime, HttpClient httpClient
 
     private void SetAuthorizationHeader(string? token)
     {
-        IsAuthenticated = !string.IsNullOrWhiteSpace(token);
-        IsManager = IsAuthenticated && LerRoles(token!).Contains("Gerente", StringComparer.Ordinal);
+        AccessToken = string.IsNullOrWhiteSpace(token) ? null : token;
+        IsAuthenticated = AccessToken is not null;
+        IsManager = AccessToken is not null && LerRoles(AccessToken).Contains("Gerente", StringComparer.Ordinal);
+        var tipoPerfil = AccessToken is null ? null : LerTipoPerfil(AccessToken);
+        IsStudent = string.Equals(tipoPerfil, "aluno", StringComparison.OrdinalIgnoreCase);
+        IsTeacher = string.Equals(tipoPerfil, "professor", StringComparison.OrdinalIgnoreCase);
         httpClient.DefaultRequestHeaders.Authorization = IsAuthenticated
-            ? new AuthenticationHeaderValue("Bearer", token)
+            ? new AuthenticationHeaderValue("Bearer", AccessToken)
             : null;
+    }
+
+    private static string? LerTipoPerfil(string token)
+    {
+        var segmentos = token.Split('.');
+        if (segmentos.Length != 3)
+        {
+            return null;
+        }
+
+        try
+        {
+            var payload = segmentos[1].Replace('-', '+').Replace('_', '/');
+            payload = payload.PadRight(payload.Length + ((4 - payload.Length % 4) % 4), '=');
+            using var json = JsonDocument.Parse(Convert.FromBase64String(payload));
+            return json.RootElement.TryGetProperty("tipoPerfil", out var propriedade)
+                && propriedade.ValueKind == JsonValueKind.String
+                    ? propriedade.GetString()
+                    : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static IReadOnlyCollection<string> LerRoles(string token)
