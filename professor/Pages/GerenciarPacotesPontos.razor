@@ -1,0 +1,266 @@
+@page "/gerenciar/pacotes-pontos"
+@using System.ComponentModel.DataAnnotations
+@using System.Globalization
+@inject HttpClient Http
+@inject professor.Services.AuthTokenService AuthTokens
+
+<PageTitle>Gerenciar pacotes de pontos</PageTitle>
+
+<div class="container mt-4">
+    <h1>Gerenciar pacotes de pontos</h1>
+
+    @if (!AuthTokens.IsManager)
+    {
+        <div class="alert alert-danger" role="alert">Acesso permitido somente ao usuário gerente.</div>
+    }
+    else
+    {
+        @if (_erro is not null)
+        {
+            <div class="alert alert-danger" role="alert">@_erro</div>
+        }
+        @if (_mensagem is not null)
+        {
+            <div class="alert alert-success" role="status">@_mensagem</div>
+        }
+
+        <EditForm EditContext="_editContext" OnValidSubmit="SalvarAsync" FormName="pacote-pontos-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="pacote-nome">Nome do pacote</label>
+                    <InputText id="pacote-nome" class="form-control" @bind-Value="_formulario.Nome" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="pacote-pontos">Quantidade de pontos</label>
+                    <InputNumber id="pacote-pontos" class="form-control" @bind-Value="_formulario.QuantidadePontos" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="pacote-preco">Preço</label>
+                    <input id="pacote-preco" class="form-control" type="text" inputmode="decimal"
+                           autocomplete="off" value="@_precoFormatado" @oninput="AtualizarPreco" />
+                    <ValidationMessage For="() => _formulario.PrecoCentavos" />
+                    <div class="form-text">Digite o valor em reais. Limites: R$ 1,00 a R$ 1.000.000,00.</div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary" disabled="@_salvando">
+                @(_salvando ? "Salvando..." : _idEmEdicao.HasValue ? "Atualizar pacote" : "Cadastrar pacote")
+            </button>
+            @if (_idEmEdicao.HasValue)
+            {
+                <button type="button" class="btn btn-outline-secondary ms-2" @onclick="CancelarEdicao">Cancelar edição</button>
+            }
+        </EditForm>
+
+        <h2 class="h4 mt-4">Pacotes cadastrados</h2>
+        @if (_carregando)
+        {
+            <p>Carregando pacotes...</p>
+        }
+        else if (_pacotes.Count == 0)
+        {
+            <p>Nenhum pacote cadastrado.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr><th>Nome</th><th>Pontos</th><th>Preço</th><th>Status</th><th>Ações</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var pacote in _pacotes)
+                        {
+                            <tr>
+                                <td>@pacote.Nome</td>
+                                <td>@pacote.QuantidadePontos</td>
+                                <td>@((pacote.PrecoCentavos / 100m).ToString("C", CultureInfo.GetCultureInfo("pt-BR")))</td>
+                                <td>@(pacote.Ativo ? "Ativo" : "Inativo")</td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-outline-primary me-2" @onclick="() => Editar(pacote)">Editar</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AlternarStatusAsync(pacote)">
+                                        @(pacote.Ativo ? "Desativar" : "Ativar")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private readonly FormularioPacote _formulario = new();
+    private readonly EditContext _editContext;
+    private List<PacoteResponse> _pacotes = [];
+    private bool _carregando = true;
+    private bool _salvando;
+    private int? _idEmEdicao;
+    private string? _erro;
+    private string? _mensagem;
+    private string _precoFormatado = FormatarMoeda(100);
+
+    public GerenciarPacotesPontos()
+    {
+        _editContext = new EditContext(_formulario);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthTokens.IsManager)
+        {
+            await CarregarAsync();
+        }
+        else
+        {
+            _carregando = false;
+        }
+    }
+
+    private async Task CarregarAsync()
+    {
+        _carregando = true;
+        _erro = null;
+        try
+        {
+            using var response = await Http.GetAsync("api/pacotes-pontos/gerenciar");
+            response.EnsureSuccessStatusCode();
+            _pacotes = await response.Content.ReadFromJsonAsync<List<PacoteResponse>>() ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível carregar o catálogo. Verifique a autorização e a conexão com a API.";
+        }
+        finally
+        {
+            _carregando = false;
+        }
+    }
+
+    private async Task SalvarAsync()
+    {
+        _salvando = true;
+        _erro = null;
+        _mensagem = null;
+        try
+        {
+            using var response = _idEmEdicao is int id
+                ? await Http.PutAsJsonAsync($"api/pacotes-pontos/gerenciar/{id}", _formulario)
+                : await Http.PostAsJsonAsync("api/pacotes-pontos/gerenciar", _formulario);
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroAsync(response) ?? "Não foi possível salvar o pacote.";
+                return;
+            }
+
+            CancelarEdicao();
+            _mensagem = "Pacote salvo com sucesso.";
+            await CarregarAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API.";
+        }
+        finally
+        {
+            _salvando = false;
+        }
+    }
+
+    private async Task AlternarStatusAsync(PacoteResponse pacote)
+    {
+        _erro = null;
+        _mensagem = null;
+        try
+        {
+            using var response = await Http.PatchAsJsonAsync(
+                $"api/pacotes-pontos/gerenciar/{pacote.Id}/status", !pacote.Ativo);
+            if (!response.IsSuccessStatusCode)
+            {
+                _erro = await LerErroAsync(response) ?? "Não foi possível alterar o status do pacote.";
+                return;
+            }
+
+            _mensagem = "Status do pacote atualizado.";
+            await CarregarAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API.";
+        }
+    }
+
+    private void Editar(PacoteResponse pacote)
+    {
+        _idEmEdicao = pacote.Id;
+        _formulario.Nome = pacote.Nome;
+        _formulario.QuantidadePontos = pacote.QuantidadePontos;
+        _formulario.PrecoCentavos = pacote.PrecoCentavos;
+        _precoFormatado = FormatarMoeda(pacote.PrecoCentavos);
+        _mensagem = null;
+        _erro = null;
+    }
+
+    private void CancelarEdicao()
+    {
+        _idEmEdicao = null;
+        _formulario.Nome = string.Empty;
+        _formulario.QuantidadePontos = 1;
+        _formulario.PrecoCentavos = 100;
+        _precoFormatado = FormatarMoeda(100);
+        _editContext.NotifyFieldChanged(new FieldIdentifier(_formulario, nameof(_formulario.PrecoCentavos)));
+    }
+
+    private void AtualizarPreco(ChangeEventArgs args)
+    {
+        var digitos = new string((args.Value?.ToString() ?? string.Empty)
+            .Where(caractere => caractere is >= '0' and <= '9')
+            .ToArray());
+
+        if (digitos.Length == 0)
+        {
+            _formulario.PrecoCentavos = 0;
+            _precoFormatado = string.Empty;
+        }
+        else if (!long.TryParse(digitos, NumberStyles.None, CultureInfo.InvariantCulture, out var centavos))
+        {
+            _formulario.PrecoCentavos = int.MaxValue;
+            _precoFormatado = FormatarMoeda(int.MaxValue);
+        }
+        else
+        {
+            _formulario.PrecoCentavos = (int)Math.Min(centavos, int.MaxValue);
+            _precoFormatado = FormatarMoeda(_formulario.PrecoCentavos);
+        }
+
+        _editContext.NotifyFieldChanged(new FieldIdentifier(_formulario, nameof(_formulario.PrecoCentavos)));
+    }
+
+    private static string FormatarMoeda(int precoCentavos) =>
+        (precoCentavos / 100m).ToString("C", CultureInfo.GetCultureInfo("pt-BR"));
+
+    private static async Task<string?> LerErroAsync(HttpResponseMessage response)
+    {
+        var erro = await response.Content.ReadFromJsonAsync<ApiError>();
+        return erro?.Message;
+    }
+
+    private sealed class FormularioPacote
+    {
+        [Required(ErrorMessage = "Informe o nome do pacote.")]
+        [StringLength(100, MinimumLength = 1)]
+        public string Nome { get; set; } = string.Empty;
+
+        [Range(1, int.MaxValue, ErrorMessage = "A quantidade de pontos deve ser positiva.")]
+        public int QuantidadePontos { get; set; } = 1;
+
+        [Range(100, 100_000_000, ErrorMessage = "O preço deve estar entre R$ 1,00 e R$ 1.000.000,00.")]
+        public int PrecoCentavos { get; set; } = 100;
+    }
+
+    private sealed record PacoteResponse(int Id, string Nome, int QuantidadePontos, int PrecoCentavos, bool Ativo);
+    private sealed record ApiError(string? Message);
+}

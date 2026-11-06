@@ -22,6 +22,54 @@ namespace APILinguagem.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("APILinguagem.Models.CompraPontos", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("ContaAcessoId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CriadaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiraEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdentificadorProvedor")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("PrecoCentavos")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("QuantidadePontos")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdentificadorProvedor")
+                        .IsUnique();
+
+                    b.HasIndex("ContaAcessoId", "CriadaEm");
+
+                    b.ToTable("ComprasPontos", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ComprasPontos_PrecoCentavos_Positive", "\"PrecoCentavos\" > 0");
+
+                            t.HasCheckConstraint("CK_ComprasPontos_QuantidadePontos_Positive", "\"QuantidadePontos\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("APILinguagem.Models.ContaAcesso", b =>
                 {
                     b.Property<int>("Id")
@@ -101,6 +149,44 @@ namespace APILinguagem.Migrations
                     b.ToTable("LancamentosPontos", null, t =>
                         {
                             t.HasCheckConstraint("CK_LancamentosPontos_Quantidade_NaoZero", "\"Quantidade\" <> 0");
+                        });
+                });
+
+            modelBuilder.Entity("APILinguagem.Models.PacotePontos", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("CriadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("PrecoCentavos")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("QuantidadePontos")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Nome")
+                        .IsUnique();
+
+                    b.ToTable("PacotesPontos", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PacotesPontos_PrecoCentavos_Positive", "\"PrecoCentavos\" > 0");
+
+                            t.HasCheckConstraint("CK_PacotesPontos_QuantidadePontos_Positive", "\"QuantidadePontos\" > 0");
                         });
                 });
 
@@ -220,6 +306,17 @@ namespace APILinguagem.Migrations
                         .IsUnique();
 
                     b.ToTable("Professores", (string)null);
+                });
+
+            modelBuilder.Entity("APILinguagem.Models.CompraPontos", b =>
+                {
+                    b.HasOne("APILinguagem.Models.ContaAcesso", "ContaAcesso")
+                        .WithMany()
+                        .HasForeignKey("ContaAcessoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ContaAcesso");
                 });
 
             modelBuilder.Entity("APILinguagem.Models.LancamentoPontos", b =>

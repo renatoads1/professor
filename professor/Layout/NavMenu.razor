@@ -1,4 +1,6 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
+﻿@implements IDisposable
+
+<div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         @if (!MenuRecolhido)
         {
@@ -54,10 +56,22 @@
                 @if (!MenuRecolhido) { <span>Professores</span> }
             </NavLink>
         </div>
+        @if (AuthTokens.IsManager)
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="gerenciar/pacotes-pontos">
+                    <span class="bi bi-gear-fill" aria-hidden="true"></span>
+                    @if (!MenuRecolhido) { <span>Gerenciar</span> }
+                </NavLink>
+            </div>
+        }
     </nav>
 </div>
 
 @code {
+    [Inject]
+    private professor.Services.AuthTokenService AuthTokens { get; set; } = null!;
+
     [Parameter]
     public bool MenuRecolhido { get; set; }
 
@@ -65,6 +79,11 @@
     public EventCallback<bool> MenuRecolhidoChanged { get; set; }
 
     private bool collapseNavMenu = true;
+
+    protected override void OnInitialized()
+    {
+        AuthTokens.AuthenticationStateChanged += AtualizarAutenticacao;
+    }
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
 
@@ -74,4 +93,11 @@
     }
 
     private Task ToggleSidebar() => MenuRecolhidoChanged.InvokeAsync(!MenuRecolhido);
+
+    private void AtualizarAutenticacao() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        AuthTokens.AuthenticationStateChanged -= AtualizarAutenticacao;
+    }
 }

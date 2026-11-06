@@ -44,7 +44,17 @@ public sealed class AutenticacaoController(
             new Claim(ClaimTypes.NameIdentifier, conta.Id.ToString()),
             new Claim(ClaimTypes.Name, conta.Nome),
             new Claim(ClaimTypes.Email, conta.Email)
-        };
+        }.ToList();
+
+        var emailGerente = configuration["Gerente:Email"];
+        if (!string.IsNullOrWhiteSpace(emailGerente)
+            && string.Equals(
+                ContaAcessoService.NormalizarEmail(conta.Email),
+                ContaAcessoService.NormalizarEmail(emailGerente),
+                StringComparison.Ordinal))
+        {
+            claims.Add(new Claim(ClaimTypes.Role, "Gerente"));
+        }
         var credenciais = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(chave)), SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(
             issuer: configuration["Authentication:Issuer"] ?? "professor-api",

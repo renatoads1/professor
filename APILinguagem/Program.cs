@@ -40,7 +40,8 @@ else
 {
     throw new InvalidOperationException("Configure uma chave JWT com pelo menos 32 bytes em Authentication:JwtSigningKey usando User Secrets ou variável de ambiente.");
 }
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+    options.AddPolicy("Gerente", policy => policy.RequireRole("Gerente")));
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options => options.AddPolicy("BlazorClient", policy =>
     policy.WithOrigins(allowedOrigins)
