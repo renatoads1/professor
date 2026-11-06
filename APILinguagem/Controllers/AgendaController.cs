@@ -160,7 +160,7 @@ public sealed class AgendaController(AgendaAulasService agendaAulasService) : Co
         var resultado = await agendaAulasService.ReservarAsync(contaAcessoId, request, cancellationToken);
         return resultado.Status switch
         {
-            AgendaOperacaoStatus.Concluida => CreatedAtAction(
+            AgendaOperacaoStatus.Concluida => CreatedAtRoute(
                 nameof(ObterMinhaAulaAsync),
                 new { id = resultado.Valor!.Id },
                 resultado.Valor),
