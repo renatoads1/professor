@@ -18,6 +18,15 @@ builder.Services.AddHttpClient<TurnstileVerifier>();
 builder.Services.AddScoped<ContaAcessoService>();
 builder.Services.AddScoped<PesquisaPontosService>();
 builder.Services.AddScoped<AgendaAulasService>();
+builder.Services.Configure<InterPixOptions>(builder.Configuration.GetSection(InterPixOptions.SectionName));
+builder.Services.AddHttpClient("InterOAuth", client => client.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(InterPixHttpMessageHandlerFactory.Create);
+builder.Services.AddHttpClient("InterPix", client => client.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(InterPixHttpMessageHandlerFactory.Create);
+builder.Services.AddSingleton<InterAccessTokenProvider>();
+builder.Services.AddScoped<IInterPixClient, InterPixClient>();
+builder.Services.AddScoped<CompraPontosService>();
+builder.Services.AddHostedService<CompraPontosReconciliationService>();
 builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 128 * 1024);
 var jwtSigningKey = builder.Configuration["Authentication:JwtSigningKey"];
 if (!string.IsNullOrWhiteSpace(jwtSigningKey) && Encoding.UTF8.GetByteCount(jwtSigningKey) >= 32)

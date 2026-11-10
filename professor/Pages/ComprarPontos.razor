@@ -1,0 +1,312 @@
+@page "/comprar-pontos"
+@implements IAsyncDisposable
+@using System.Globalization
+@inject HttpClient Http
+@inject professor.Services.AuthTokenService AuthTokens
+@inject IJSRuntime JS
+
+<PageTitle>Comprar pontos</PageTitle>
+
+<div class="container mt-4">
+    <h1>Comprar pontos</h1>
+
+    @if (!AuthTokens.IsAuthenticated)
+    {
+        <div class="alert alert-info" role="status">
+            Entre como aluno para comprar pontos. <NavLink class="alert-link" href="login">Entrar</NavLink>
+        </div>
+    }
+    else if (!AuthTokens.IsStudent)
+    {
+        <div class="alert alert-info" role="status">A compra de pontos está disponível somente para alunos.</div>
+    }
+    else
+    {
+        @if (_erro is not null)
+        {
+            <div class="alert alert-danger" role="alert">
+                @_erro
+                @if (_compraParaTentarNovamente is not null)
+                {
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-outline-danger" @onclick="RecriarPixAsync" disabled="@_processando">
+                            Gerar cobrança Pix
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+        @if (_mensagem is not null)
+        {
+            <div class="alert alert-success" role="status">@_mensagem</div>
+        }
+
+        @if (_compra is not null)
+        {
+            <section class="card card-body mb-4" aria-labelledby="pix-titulo">
+                <h2 id="pix-titulo" class="h4">Pagamento Pix</h2>
+                <p>
+                    Compra de <strong>@_compra.QuantidadePontos pontos</strong>,
+                    no valor de <strong>@FormatarPreco(_compra.PrecoCentavos)</strong>.
+                </p>
+                <p>Status: <strong>@_compra.Status</strong></p>
+                @if (_compra.Status == "Pendente")
+                {
+                    <p>Expira em @_compra.ExpiraEm.ToLocalTime().ToString("g", Cultura)</p>
+                    @if (_compra.QrCodeDataUrl is not null)
+                    {
+                        <img src="@_compra.QrCodeDataUrl" alt="QR Code Pix da compra" class="img-thumbnail align-self-start mb-3" style="max-width: 260px" />
+                    }
+                    @if (_compra.PixCopiaECola is not null)
+                    {
+                        <label class="form-label" for="pix-copia-cola">Pix copia e cola</label>
+                        <textarea id="pix-copia-cola" class="form-control mb-2" rows="4" readonly>@_compra.PixCopiaECola</textarea>
+                        <button type="button" class="btn btn-outline-primary align-self-start" @onclick="CopiarPixAsync">Copiar código Pix</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-outline-primary align-self-start" @onclick="RecriarPixAsync" disabled="@_processando">
+                            Gerar cobrança Pix
+                        </button>
+                    }
+                    <p class="text-muted mt-3 mb-0">A confirmação será atualizada após a validação do pagamento pela API.</p>
+                }
+                else if (_compra.Status == "Paga")
+                {
+                    <div class="alert alert-success mb-0" role="status">Pagamento confirmado. Os pontos foram creditados na sua conta.</div>
+                }
+                else
+                {
+                    <p class="mb-0">Esta cobrança não está mais aguardando pagamento.</p>
+                }
+            </section>
+        }
+
+        <h2 class="h4">Pacotes disponíveis</h2>
+        @if (_carregando)
+        {
+            <p>Carregando pacotes...</p>
+        }
+        else if (_pacotes.Count == 0)
+        {
+            <p>Nenhum pacote disponível no momento.</p>
+        }
+        else
+        {
+            <div class="row g-3">
+                @foreach (var pacote in _pacotes)
+                {
+                    <div class="col-md-6 col-lg-4" @key="pacote.Id">
+                        <div class="card h-100">
+                            <div class="card-body d-flex flex-column">
+                                <h3 class="h5">@pacote.Nome</h3>
+                                <p class="mb-1">@pacote.QuantidadePontos pontos</p>
+                                <p class="fs-5 fw-semibold">@FormatarPreco(pacote.PrecoCentavos)</p>
+                                <button type="button" class="btn btn-primary mt-auto" @onclick="() => ComprarAsync(pacote.Id)" disabled="@_processando">
+                                    @(_processando && _pacoteSelecionadoId == pacote.Id ? "Criando Pix..." : "Comprar por Pix")
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private static readonly CultureInfo Cultura = CultureInfo.GetCultureInfo("pt-BR");
+    private List<PacoteResponse> _pacotes = [];
+    private CompraResponse? _compra;
+    private long? _compraParaTentarNovamente;
+    private bool _carregando = true;
+    private bool _processando;
+    private int? _pacoteSelecionadoId;
+    private string? _erro;
+    private string? _mensagem;
+    private CancellationTokenSource? _monitoramento;
+    private IJSObjectReference? _clipboardModule;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthTokens.IsAuthenticated || !AuthTokens.IsStudent)
+        {
+            _carregando = false;
+            return;
+        }
+
+        try
+        {
+            using var response = await Http.GetAsync("api/pacotes-pontos");
+            response.EnsureSuccessStatusCode();
+            _pacotes = await response.Content.ReadFromJsonAsync<List<PacoteResponse>>() ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível carregar os pacotes. Verifique a conexão com a API.";
+        }
+        finally
+        {
+            _carregando = false;
+        }
+    }
+
+    private async Task ComprarAsync(int pacoteId)
+    {
+        _processando = true;
+        _pacoteSelecionadoId = pacoteId;
+        _erro = null;
+        _mensagem = null;
+        _compraParaTentarNovamente = null;
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/compras-pontos", new CriarCompraRequest(pacoteId));
+            if (!response.IsSuccessStatusCode)
+            {
+                var erro = await response.Content.ReadFromJsonAsync<ErroCompraResponse>();
+                _erro = erro?.Message ?? "Não foi possível criar a compra.";
+                _compraParaTentarNovamente = erro?.CompraId;
+                return;
+            }
+
+            _compra = await response.Content.ReadFromJsonAsync<CompraResponse>()
+                ?? throw new InvalidOperationException("A API retornou uma compra vazia.");
+            IniciarMonitoramento(_compra.Id);
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API.";
+        }
+        finally
+        {
+            _processando = false;
+            _pacoteSelecionadoId = null;
+        }
+    }
+
+    private async Task RecriarPixAsync()
+    {
+        if (_compraParaTentarNovamente is not long id)
+        {
+            return;
+        }
+
+        _processando = true;
+        _erro = null;
+        try
+        {
+            using var response = await Http.PostAsync($"api/compras-pontos/{id}/pix", content: null);
+            if (!response.IsSuccessStatusCode)
+            {
+                var erro = await response.Content.ReadFromJsonAsync<ErroCompraResponse>();
+                _erro = erro?.Message ?? "Não foi possível gerar a cobrança Pix.";
+                return;
+            }
+
+            _compra = await response.Content.ReadFromJsonAsync<CompraResponse>()
+                ?? throw new InvalidOperationException("A API retornou uma compra vazia.");
+            _compraParaTentarNovamente = null;
+            IniciarMonitoramento(_compra.Id);
+        }
+        catch (HttpRequestException)
+        {
+            _erro = "Não foi possível conectar à API.";
+        }
+        finally
+        {
+            _processando = false;
+        }
+    }
+
+    private async Task CopiarPixAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_compra?.PixCopiaECola))
+        {
+            return;
+        }
+
+        try
+        {
+            _clipboardModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./pixClipboard.js");
+            await _clipboardModule.InvokeVoidAsync("copiarTexto", _compra.PixCopiaECola);
+            _mensagem = "Código Pix copiado.";
+            _erro = null;
+        }
+        catch (JSException)
+        {
+            _erro = "Não foi possível acessar a área de transferência. Selecione e copie o código Pix manualmente.";
+        }
+    }
+
+    private void IniciarMonitoramento(long compraId)
+    {
+        _monitoramento?.Cancel();
+        _monitoramento?.Dispose();
+        _monitoramento = new CancellationTokenSource();
+        _ = MonitorarCompraAsync(compraId, _monitoramento.Token);
+    }
+
+    private async Task MonitorarCompraAsync(long compraId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                using var response = await Http.GetAsync($"api/compras-pontos/{compraId}", cancellationToken);
+                response.EnsureSuccessStatusCode();
+                var compraAtualizada = await response.Content.ReadFromJsonAsync<CompraResponse>(cancellationToken: cancellationToken)
+                    ?? throw new InvalidOperationException("A API retornou uma compra vazia.");
+                await InvokeAsync(() =>
+                {
+                    _compra = compraAtualizada;
+                    StateHasChanged();
+                });
+                if (compraAtualizada.Status != "Pendente")
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (HttpRequestException)
+        {
+            await InvokeAsync(() => _erro = "Não foi possível atualizar o status da compra.");
+        }
+    }
+
+    private static string FormatarPreco(int precoCentavos) =>
+        (precoCentavos / 100m).ToString("C", Cultura);
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_monitoramento is not null)
+        {
+            await _monitoramento.CancelAsync();
+            _monitoramento.Dispose();
+        }
+
+        if (_clipboardModule is not null)
+        {
+            await _clipboardModule.DisposeAsync();
+        }
+    }
+
+    private sealed record PacoteResponse(int Id, string Nome, int QuantidadePontos, int PrecoCentavos);
+    private sealed record CriarCompraRequest(int PacoteId);
+    private sealed record CompraResponse(
+        long Id,
+        int? PacotePontosId,
+        int QuantidadePontos,
+        int PrecoCentavos,
+        string IdentificadorProvedor,
+        string Status,
+        string? PixCopiaECola,
+        string? QrCodeDataUrl,
+        DateTimeOffset CriadaEm,
+        DateTimeOffset ExpiraEm,
+        DateTimeOffset? DataPagamento);
+    private sealed record ErroCompraResponse(string? Message, long? CompraId);
+}

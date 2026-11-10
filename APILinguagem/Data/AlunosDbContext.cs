@@ -67,11 +67,18 @@ public sealed class AlunosDbContext(DbContextOptions<AlunosDbContext> options) :
             entity.HasIndex(compra => new { compra.ContaAcessoId, compra.CriadaEm });
             entity.Property(compra => compra.IdentificadorProvedor).HasMaxLength(200).IsRequired();
             entity.Property(compra => compra.Status).HasMaxLength(30).IsRequired();
+            entity.Property(compra => compra.IdentificadorCobranca).HasMaxLength(200);
+            entity.Property(compra => compra.PixCopiaECola).HasColumnType("text");
+            entity.Property(compra => compra.QrCodeBase64).HasColumnType("text");
             entity.Property(compra => compra.CriadaEm).IsRequired();
             entity.Property(compra => compra.ExpiraEm).IsRequired();
             entity.HasOne(compra => compra.ContaAcesso)
                 .WithMany()
                 .HasForeignKey(compra => compra.ContaAcessoId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(compra => compra.PacotePontos)
+                .WithMany()
+                .HasForeignKey(compra => compra.PacotePontosId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

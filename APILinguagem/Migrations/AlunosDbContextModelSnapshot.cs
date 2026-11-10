@@ -95,16 +95,32 @@ namespace APILinguagem.Migrations
                     b.Property<DateTimeOffset>("CriadaEm")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("DataPagamento")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("ExpiraEm")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdentificadorCobranca")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<string>("IdentificadorProvedor")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<int?>("PacotePontosId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PixCopiaECola")
+                        .HasColumnType("text");
+
                     b.Property<int>("PrecoCentavos")
                         .HasColumnType("integer");
+
+                    b.Property<string>("QrCodeBase64")
+                        .HasColumnType("text");
 
                     b.Property<int>("QuantidadePontos")
                         .HasColumnType("integer");
@@ -118,6 +134,8 @@ namespace APILinguagem.Migrations
 
                     b.HasIndex("IdentificadorProvedor")
                         .IsUnique();
+
+                    b.HasIndex("PacotePontosId");
 
                     b.HasIndex("ContaAcessoId", "CriadaEm");
 
@@ -440,7 +458,14 @@ namespace APILinguagem.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("APILinguagem.Models.PacotePontos", "PacotePontos")
+                        .WithMany()
+                        .HasForeignKey("PacotePontosId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("ContaAcesso");
+
+                    b.Navigation("PacotePontos");
                 });
 
             modelBuilder.Entity("APILinguagem.Models.DisponibilidadeSemanalProfessor", b =>

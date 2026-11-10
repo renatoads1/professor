@@ -74,6 +74,12 @@
         @if (AuthTokens.IsStudent)
         {
             <div class="nav-item px-3">
+                <NavLink class="nav-link" href="comprar-pontos">
+                    <span class="bi bi-coin" aria-hidden="true"></span>
+                    @if (!MenuRecolhido) { <span>Comprar pontos</span> }
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
                 <NavLink class="nav-link" href="agendar-aula">
                     <svg class="nav-menu-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3.5" y="5.5" width="17" height="15" rx="2" />
