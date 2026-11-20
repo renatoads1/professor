@@ -40,7 +40,7 @@ public sealed class ComprasPontosController(
             var compra = await compraPontosService.CriarAsync(contaAcessoId, request.PacoteId, cancellationToken);
             return compra is null
                 ? NotFound(new { message = "O pacote não existe ou está inativo." })
-                : CreatedAtAction(nameof(ObterAsync), new { id = compra.Id }, compra);
+                : CreatedAtRoute(nameof(ObterAsync), new { id = compra.Id }, compra);
         }
         catch (FalhaGerarPixException exception)
         {
@@ -90,7 +90,7 @@ public sealed class ComprasPontosController(
         }
     }
 
-    [HttpGet("{id:long}")]
+    [HttpGet("{id:long}", Name = nameof(ObterAsync))]
     public async Task<ActionResult<CompraPontosResponse>> ObterAsync(long id, CancellationToken cancellationToken)
     {
         if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var contaAcessoId))

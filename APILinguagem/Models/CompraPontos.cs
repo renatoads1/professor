@@ -61,7 +61,7 @@ public sealed class CompraPontos
     public DateTimeOffset ExpiraEm { get; private set; }
     public DateTimeOffset? DataPagamento { get; private set; }
 
-    public void DefinirDadosPix(string identificadorCobranca, string pixCopiaECola, string qrCodeBase64)
+    public void DefinirDadosPix(string identificadorCobranca, string pixCopiaECola, string? qrCodeBase64)
     {
         if (Status != CompraPontosStatus.Pendente)
         {
@@ -73,9 +73,9 @@ public sealed class CompraPontos
             throw new ArgumentException("O identificador da cobrança é inválido.", nameof(identificadorCobranca));
         }
 
-        if (string.IsNullOrWhiteSpace(pixCopiaECola) || string.IsNullOrWhiteSpace(qrCodeBase64))
+        if (string.IsNullOrWhiteSpace(pixCopiaECola))
         {
-            throw new ArgumentException("A cobrança deve conter o código Pix e o QR Code.");
+            throw new ArgumentException("A cobrança deve conter o código Pix copia e cola.");
         }
 
         IdentificadorCobranca = identificadorCobranca.Trim();

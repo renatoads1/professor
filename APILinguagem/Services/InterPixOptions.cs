@@ -76,7 +76,7 @@ public sealed class InterPixOptions
 
         try
         {
-            using var certificate = LoadCertificate(contentRootPath);
+            var certificate = LoadCertificate(contentRootPath);
             if (certificate is null || !certificate.HasPrivateKey)
             {
                 throw new InvalidOperationException("O certificado InterPix deve conter ou estar associado à chave privada.");
@@ -88,33 +88,8 @@ public sealed class InterPixOptions
         }
     }
 
-    public X509Certificate2? LoadCertificate(string contentRootPath)
-    {
-        if (string.IsNullOrWhiteSpace(CertificatePath))
-        {
-            return null;
-        }
-
-        var certificatePath = ResolvePath(CertificatePath, contentRootPath);
-        if (!File.Exists(certificatePath))
-        {
-            return null;
-        }
-
-        if (Path.GetExtension(certificatePath).Equals(".pfx", StringComparison.OrdinalIgnoreCase)
-            || Path.GetExtension(certificatePath).Equals(".p12", StringComparison.OrdinalIgnoreCase))
-        {
-            return X509CertificateLoader.LoadPkcs12FromFile(
-                certificatePath,
-                CertificatePassword,
-                X509KeyStorageFlags.EphemeralKeySet);
-        }
-
-        var privateKeyPath = string.IsNullOrWhiteSpace(PrivateKeyPath)
-            ? certificatePath
-            : ResolvePath(PrivateKeyPath, contentRootPath);
-        return X509Certificate2.CreateFromPemFile(certificatePath, privateKeyPath);
-    }
+    public X509Certificate2? LoadCertificate(string contentRootPath) =>
+        InterPixCertificateLoader.Load(this, contentRootPath);
 
     private static string ResolvePath(string path, string contentRootPath) => Path.IsPathRooted(path)
         ? path
@@ -127,7 +102,10 @@ public static class InterPixHttpMessageHandlerFactory
     {
         var options = serviceProvider.GetRequiredService<IOptions<InterPixOptions>>().Value;
         var environment = serviceProvider.GetRequiredService<IHostEnvironment>();
-        var handler = new HttpClientHandler();
+        var handler = new HttpClientHandler
+        {
+            ClientCertificateOptions = ClientCertificateOption.Manual
+        };
         var certificate = options.LoadCertificate(environment.ContentRootPath);
         if (certificate is not null)
         {
@@ -136,4 +114,97 @@ public static class InterPixHttpMessageHandlerFactory
 
         return handler;
     }
+}
+
+file static class InterPixCertificateLoader
+{
+    private static readonly object Gate = new();
+    private static string? _cacheKey;
+    private static X509Certificate2? _certificate;
+    private static readonly X509KeyStorageFlags[] WindowsKeyStorageFlags =
+    [
+        // IIS Express não abre a chave do perfil do usuário no handshake, mesmo quando a importação não lança erro.
+        X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet,
+        X509KeyStorageFlags.UserKeySet | X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet
+    ];
+
+    public static X509Certificate2? Load(InterPixOptions options, string contentRootPath)
+    {
+        if (string.IsNullOrWhiteSpace(options.CertificatePath))
+        {
+            return null;
+        }
+
+        var certificatePath = ResolvePath(options.CertificatePath, contentRootPath);
+        if (!File.Exists(certificatePath))
+        {
+            return null;
+        }
+
+        var privateKeyPath = string.IsNullOrWhiteSpace(options.PrivateKeyPath)
+            ? null
+            : ResolvePath(options.PrivateKeyPath, contentRootPath);
+        var cacheKey = string.Join(
+            '|',
+            certificatePath,
+            privateKeyPath,
+            File.GetLastWriteTimeUtc(certificatePath).Ticks,
+            privateKeyPath is not null && File.Exists(privateKeyPath) ? File.GetLastWriteTimeUtc(privateKeyPath).Ticks : 0,
+            options.CertificatePassword);
+
+        lock (Gate)
+        {
+            if (_cacheKey == cacheKey)
+            {
+                return _certificate;
+            }
+
+            var loaded = LoadUncached(options, certificatePath, privateKeyPath);
+            _certificate = loaded;
+            _cacheKey = cacheKey;
+            return _certificate;
+        }
+    }
+
+    private static X509Certificate2 LoadUncached(InterPixOptions options, string certificatePath, string? privateKeyPath)
+    {
+        if (Path.GetExtension(certificatePath).Equals(".pfx", StringComparison.OrdinalIgnoreCase)
+            || Path.GetExtension(certificatePath).Equals(".p12", StringComparison.OrdinalIgnoreCase))
+        {
+            return ImportPkcs12(File.ReadAllBytes(certificatePath), options.CertificatePassword);
+        }
+
+        var keyPath = privateKeyPath ?? certificatePath;
+        // CreateFromPemFile deixa a chave efêmera. O Schannel do Windows recusa essa chave
+        // com "As credenciais fornecidas para o pacote não foram reconhecidas".
+        using var pemCertificate = X509Certificate2.CreateFromPemFile(certificatePath, keyPath);
+        return ImportPkcs12(pemCertificate.Export(X509ContentType.Pkcs12), password: null);
+    }
+
+    private static X509Certificate2 ImportPkcs12(byte[] pkcs12, string? password)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return X509CertificateLoader.LoadPkcs12(pkcs12, password, X509KeyStorageFlags.EphemeralKeySet);
+        }
+
+        CryptographicException? lastError = null;
+        foreach (var flags in WindowsKeyStorageFlags)
+        {
+            try
+            {
+                return X509CertificateLoader.LoadPkcs12(pkcs12, password, flags);
+            }
+            catch (CryptographicException exception)
+            {
+                lastError = exception;
+            }
+        }
+
+        throw lastError ?? new CryptographicException("Não foi possível importar a chave privada do certificado InterPix.");
+    }
+
+    private static string ResolvePath(string path, string contentRootPath) => Path.IsPathRooted(path)
+        ? path
+        : Path.GetFullPath(Path.Combine(contentRootPath, path));
 }
