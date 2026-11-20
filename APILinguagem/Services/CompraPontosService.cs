@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using APILinguagem.Data;
 using APILinguagem.Models;
 using Microsoft.EntityFrameworkCore;
@@ -74,7 +75,10 @@ public sealed class CompraPontosService(
 
         if (compra.ExpiraEm <= DateTimeOffset.UtcNow)
         {
-            if (!await ConfirmarPagamentoAsync(compra.IdentificadorProvedor, cancellationToken))
+            if (!await ConfirmarPagamentoOuNaoEncontradaAsync(
+                    compra.Id,
+                    compra.IdentificadorProvedor,
+                    cancellationToken))
             {
                 await MarcarComoExpiradaAsync(compra.Id, cancellationToken);
             }
@@ -102,7 +106,10 @@ public sealed class CompraPontosService(
 
         if (compra.Status == CompraPontosStatus.Pendente && compra.ExpiraEm <= DateTimeOffset.UtcNow)
         {
-            if (!await ConfirmarPagamentoAsync(compra.IdentificadorProvedor, cancellationToken))
+            if (!await ConfirmarPagamentoOuNaoEncontradaAsync(
+                    compra.Id,
+                    compra.IdentificadorProvedor,
+                    cancellationToken))
             {
                 await MarcarComoExpiradaAsync(compra.Id, cancellationToken);
             }
@@ -203,7 +210,10 @@ public sealed class CompraPontosService(
         {
             try
             {
-                var paga = await ConfirmarPagamentoAsync(compra.IdentificadorProvedor, cancellationToken);
+                var paga = await ConfirmarPagamentoOuNaoEncontradaAsync(
+                    compra.Id,
+                    compra.IdentificadorProvedor,
+                    cancellationToken);
                 if (!paga && compra.ExpiraEm <= agora)
                 {
                     await MarcarComoExpiradaAsync(compra.Id, cancellationToken);
@@ -241,6 +251,25 @@ public sealed class CompraPontosService(
 
     public Task ConfigurarWebhookAsync(CancellationToken cancellationToken) =>
         interPixClient.ConfigurarWebhookAsync(cancellationToken);
+
+    private async Task<bool> ConfirmarPagamentoOuNaoEncontradaAsync(
+        long compraId,
+        string txid,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ConfirmarPagamentoAsync(txid, cancellationToken);
+        }
+        catch (HttpRequestException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        {
+            logger.LogWarning(
+                exception,
+                "Cobrança Pix da compra {CompraId} não foi encontrada no Inter; nenhum ponto será creditado.",
+                compraId);
+            return false;
+        }
+    }
 
     private async Task CriarPixAsync(CompraPontos compra, CancellationToken cancellationToken)
     {

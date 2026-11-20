@@ -1,3 +1,4 @@
+using System.Net;
 using APILinguagem.Data;
 using APILinguagem.Models;
 using APILinguagem.Services;
@@ -60,6 +61,34 @@ public sealed class CompraPontosServiceTests(PostgreSqlFixture fixture)
     }
 
     [Fact]
+    public async Task CobrancaNaoEncontradaAposExpiracaoMarcaCompraComoExpiradaSemCreditarAsync()
+    {
+        var (contaId, compraId, _) = await CriarCompraAsync();
+        await using var dbContext = fixture.CriarDbContext();
+        await dbContext.ComprasPontos
+            .Where(item => item.Id == compraId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(
+                item => item.ExpiraEm,
+                DateTimeOffset.UtcNow.AddMinutes(-1)));
+
+        var inter = new FakeInterPixClient(erroConsulta: new HttpRequestException(
+            "Cobrança não encontrada.",
+            null,
+            HttpStatusCode.NotFound));
+        var service = CriarService(dbContext, inter);
+
+        var compra = await service.ObterAsync(contaId, compraId, CancellationToken.None);
+
+        Assert.Equal(CompraPontosStatus.Expirada, compra?.Status);
+        Assert.Equal(1, inter.Consultas);
+        await fixture.AssertEstadoAsync(contaId, 0, 0);
+
+        var compraAtualizada = await service.ObterAsync(contaId, compraId, CancellationToken.None);
+        Assert.Equal(CompraPontosStatus.Expirada, compraAtualizada?.Status);
+        Assert.Equal(1, inter.Consultas);
+    }
+
+    [Fact]
     public async Task ConfirmacoesConcorrentesNaoDuplicamCreditoAsync()
     {
         var (contaId, _, txid) = await CriarCompraAsync();
@@ -118,7 +147,9 @@ public sealed class CompraPontosServiceTests(PostgreSqlFixture fixture)
         new TestHostEnvironment(),
         NullLogger<CompraPontosService>.Instance);
 
-    private sealed class FakeInterPixClient(InterPixCobranca cobranca) : IInterPixClient
+    private sealed class FakeInterPixClient(
+        InterPixCobranca? cobranca = null,
+        HttpRequestException? erroConsulta = null) : IInterPixClient
     {
         public int Consultas { get; private set; }
 
@@ -132,7 +163,13 @@ public sealed class CompraPontosServiceTests(PostgreSqlFixture fixture)
         public Task<InterPixCobranca> ConsultarCobrancaAsync(string txid, CancellationToken cancellationToken)
         {
             Consultas++;
-            return Task.FromResult(cobranca);
+            if (erroConsulta is not null)
+            {
+                return Task.FromException<InterPixCobranca>(erroConsulta);
+            }
+
+            return Task.FromResult(cobranca
+                ?? throw new InvalidOperationException("Nenhuma cobrança foi configurada para o fake."));
         }
 
         public Task ConfigurarWebhookAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
